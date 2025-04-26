@@ -45,13 +45,14 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
     isDragging,
   } = useSortable({ id: event.id, disabled: false });
 
-  const style = {
+  const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     // Use instant transition while dragging, but smooth reposition otherwise
     transition: isDragging
       ? transition
       : 'transform 200ms ease-out, opacity 200ms ease-out',
     opacity: isDragging ? 0.8 : 1,
+    touchAction: 'none',
     ...(isDragging ? { zIndex: 10 } : {}),
   };
 
