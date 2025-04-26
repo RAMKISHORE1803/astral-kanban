@@ -47,9 +47,12 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    // Use instant transition while dragging, but smooth reposition otherwise
+    transition: isDragging
+      ? transition
+      : 'transform 200ms ease-out, opacity 200ms ease-out',
     opacity: isDragging ? 0.8 : 1,
-    zIndex: isDragging ? 10 : 1,
+    ...(isDragging ? { zIndex: 10 } : {}),
   };
 
   const colorIndex = simpleHash(event.id) % eventColors.length;
@@ -62,7 +65,7 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
       {...attributes}
       {...listeners}
       className={cn(
-        "group bg-white rounded-lg overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-2",
+        "relative z-0 group bg-white rounded-lg overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-2 hover:z-10",
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         isDragging && "shadow-lg ring-2 ring-blue-400 rotate-1 scale-[1.02]"

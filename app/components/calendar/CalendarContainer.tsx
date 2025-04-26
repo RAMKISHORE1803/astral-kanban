@@ -127,12 +127,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       if (!grouped[event.date]) { grouped[event.date] = []; }
       grouped[event.date].push(event);
     });
-    Object.values(grouped).forEach(dayEvents => {
-      dayEvents.sort((a, b) => 
-        createDateWithTime(a.date, a.time).getTime() - 
-        createDateWithTime(b.date, b.time).getTime()
-      );
-    });
     return grouped;
   }, [filteredEvents, effectiveView]);
 
@@ -223,22 +217,14 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         const targetDate = overEvent.date;
         
         if (sourceDate === targetDate) {
-          // Same day reordering
-          const dateEvents = allEvents.filter(e => e.date === sourceDate);
-          const oldIndex = dateEvents.findIndex(e => e.id === active.id);
-          const newIndex = dateEvents.findIndex(e => e.id === over.id);
-          
-          if (oldIndex !== -1 && newIndex !== -1) {
-            // Reorder the events for this day
-            const reorderedDateEvents = arrayMove(dateEvents, oldIndex, newIndex);
-            
-            // Update all events by replacing the events for this specific date
-            setAllEvents(prevEvents => {
-              const otherEvents = prevEvents.filter(e => e.date !== sourceDate);
-              return [...otherEvents, ...reorderedDateEvents];
-            });
-            console.log(`Reordered ${active.id} within day ${sourceDate}`);
-          }
+          // Same-day reorder by moving within the full events array
+          setAllEvents(prevEvents => {
+            const oldGlobalIndex = prevEvents.findIndex(e => e.id === active.id);
+            const newGlobalIndex = prevEvents.findIndex(e => e.id === over.id);
+            if (oldGlobalIndex === -1 || newGlobalIndex === -1) return prevEvents;
+            return arrayMove(prevEvents, oldGlobalIndex, newGlobalIndex);
+          });
+          console.log(`Reordered ${active.id} within day ${sourceDate}`);
         } else {
           // Moving to another day at a specific position
           // First, remove from source day
@@ -314,10 +300,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
 
   // --- Render Logic ---
   const renderDayViewContent = () => {
-    const dayEvents = filteredEvents.sort((a, b) => 
-        createDateWithTime(a.date, a.time).getTime() - 
-        createDateWithTime(b.date, b.time).getTime()
-      );
+    const dayEvents = filteredEvents;
     
     const dragDate = format(currentDate, "yyyy-MM-dd");
     
@@ -356,7 +339,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart, { weekStartsOn: 1 }) });
 
     return (
-      <div className="grid grid-cols-7 h-full border-t border-l border-slate-200">
+      <div className="grid grid-cols-7 h-[90vh] border-t border-l border-slate-200">
         {weekDays.map(day => {
           const dateStr = format(day, "yyyy-MM-dd");
           const dayEvents = eventsByDateForWeek[dateStr] || [];
@@ -379,7 +362,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
                     </span>
                 </div>
                 <div className={cn(
-                  "p-1 overflow-y-auto space-y-0 bg-white max-h-[calc(100vh-250px)]",
+                  "p-1 overflow-y-auto space-y-0 bg-white max-h-[85vh]",
                   isDroppableOver && "bg-blue-50/50 transition-colors duration-150"
                 )}>
                     <SortableContext items={dayEvents.map(e=>e.id)} strategy={verticalListSortingStrategy}>
