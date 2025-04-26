@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import {
   DndContext,
   DragEndEvent,
   DragOverEvent,
   DragStartEvent,
+  DragMoveEvent,
   DragOverlay,
   MouseSensor,
   TouchSensor,
@@ -62,6 +63,10 @@ const sampleDescriptions = Object.values(sampleEventsContent).flat().map(e => e.
 const sampleImages = Object.values(sampleEventsContent).flat().map(e => e.imageUrl);
 const getRandomElement = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
+// Constants for edge detection
+const EDGE_ZONE_WIDTH_PERCENTAGE = 0.25; // 25%
+const EDGE_HOVER_DELAY_MS = 500; // 0.5 seconds
+
 const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContainerProps) => {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [allEvents, setAllEvents] = useState<KanbanEvent[]>([]);
@@ -69,6 +74,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   const [draggedEvent, setDraggedEvent] = useState<KanbanEvent | null>(null);
   const [activeDroppableId, setActiveDroppableId] = useState<string | null>(null);
   const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null); // Ref for the main container
+  const [edgeHoverState, setEdgeHoverState] = useState<'left' | 'right' | null>(null); // State for edge hover
+  const edgeHoverTimerRef = useRef<NodeJS.Timeout | null>(null); // Timer for edge activation
 
   const effectiveView = isMobile ? "day" : view;
 
@@ -152,6 +160,15 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     keyboardSensor
   );
 
+  // Function to clear the edge hover timer and state
+  const clearEdgeHover = useCallback(() => {
+    if (edgeHoverTimerRef.current) {
+      clearTimeout(edgeHoverTimerRef.current);
+      edgeHoverTimerRef.current = null;
+    }
+    setEdgeHoverState(null);
+  }, []);
+
   // --- Drag Handlers ---
   const handleDragStart = (event: DragStartEvent) => {
     const { active } = event;
@@ -162,8 +179,78 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     }
     setActiveDroppableId(null);
     setDragOverItemId(null);
+    clearEdgeHover(); // Clear any previous edge state
     console.log("Drag Start:", active.id);
   };
+
+  const handleDragMove = useCallback((event: DragMoveEvent) => {
+    if (!isMobile || !draggedEvent || !containerRef.current || effectiveView !== 'day') { // Only for mobile day view
+      clearEdgeHover(); // Clear if not applicable
+      return;
+    }
+
+    // Use activatorEvent which might hold coordinates (more reliable than delta for position)
+    // Note: This relies on the event being a PointerEvent or similar. Might need refinement based on testing.
+    const pointerX = (event.activatorEvent as PointerEvent)?.clientX;
+
+    if (pointerX === undefined) {
+        // Fallback or skip if coordinates aren't available
+        // This could happen with KeyboardSensor, etc.
+        // console.warn("Could not get clientX from DragMoveEvent activatorEvent");
+        // Don't clear hover state here, as the drag might still be active near an edge
+        return;
+    }
+
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const containerLeft = containerRect.left;
+    const containerWidth = containerRect.width;
+    const edgeWidth = containerWidth * EDGE_ZONE_WIDTH_PERCENTAGE;
+
+    // Adjust edge boundaries slightly inwards to avoid accidental system gesture triggers
+    const safetyMargin = 10; // px
+    const leftEdgeBoundary = containerLeft + edgeWidth + safetyMargin;
+    const rightEdgeBoundary = containerLeft + containerWidth - edgeWidth - safetyMargin;
+
+    let currentEdge: 'left' | 'right' | null = null;
+    // Ensure check is within the container, not just outside screen edges if container is smaller
+    if (pointerX >= containerLeft && pointerX < leftEdgeBoundary) {
+        currentEdge = 'left';
+    } else if (pointerX <= containerRect.right && pointerX > rightEdgeBoundary) {
+        currentEdge = 'right';
+    }
+
+    // If the edge state hasn't changed, do nothing more
+    if (currentEdge === edgeHoverState) {
+        return;
+    }
+
+    // Clear existing timer if edge changes or moves out of zone
+    // Keep existing edgeHoverState until timer clears or new edge detected
+    if (edgeHoverTimerRef.current) {
+         clearTimeout(edgeHoverTimerRef.current);
+         edgeHoverTimerRef.current = null;
+    }
+    setEdgeHoverState(currentEdge); // Update visual state immediately
+
+    if (currentEdge) {
+        console.log(`Hovering ${currentEdge} edge`);
+        edgeHoverTimerRef.current = setTimeout(() => {
+            console.log(`Triggering day change: ${currentEdge}`);
+            const newDate = currentEdge === 'left' ? subDays(currentDate, 1) : addDays(currentDate, 1);
+            onDateChange(newDate);
+
+             // Haptic feedback (optional, browser support varies)
+            if (navigator.vibrate) {
+                navigator.vibrate(50); // Short vibration
+            }
+            // Reset timer ref, but keep edgeHoverState for visual feedback until drag ends or moves
+            edgeHoverTimerRef.current = null;
+             // Set state again to ensure visual remains if needed, or maybe clear it?
+             // Let's clear it after trigger to prevent re-trigger if user lingers
+             // setEdgeHoverState(null); // Let dragEnd handle final clear
+        }, EDGE_HOVER_DELAY_MS);
+    }
+  }, [isMobile, draggedEvent, edgeHoverState, clearEdgeHover, onDateChange, currentDate, effectiveView]);
 
   const handleDragOver = (event: DragOverEvent) => {
     const { active, over } = event;
@@ -192,9 +279,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
+    clearEdgeHover(); // Ensure timer/state is cleared on drag end
     const { active, over } = event;
     
-    // Clean up state
     setDraggedEvent(null);
     setActiveDroppableId(null);
     setDragOverItemId(null);
@@ -271,7 +358,14 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       }
     }
   };
-  // --- End Drag Handlers ---
+
+  const handleDragCancel = useCallback(() => {
+      clearEdgeHover();
+      setDraggedEvent(null);
+      setActiveDroppableId(null);
+      setDragOverItemId(null);
+      console.log("Drag Cancelled");
+  }, [clearEdgeHover]);
 
   // --- Mobile Swipe Navigation ---
   const handleDrag = (event: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -337,8 +431,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
               ))
             )}
             {/* Drop indicator placeholder - shows when dragging */}
-            {draggedEvent && dayEvents.length === 0 && (
-              <div className="h-28 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50/50 flex items-center justify-center">
+            {draggedEvent && dayEvents.length === 0 && activeDroppableId === dragDate && (
+              <div className="h-28 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50/50 flex items-center justify-center mt-2">
                 <p className="text-blue-500 text-sm">Drop to add to this day</p>
               </div>
             )}
@@ -405,19 +499,21 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         sensors={sensors} 
         collisionDetection={closestCenter}
         onDragStart={handleDragStart} 
+        onDragMove={handleDragMove}
         onDragOver={handleDragOver} 
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
     >
-      <div className="bg-white rounded-b-astral shadow-sm border border-slate-100 border-t-0 flex-1 flex flex-col overflow-hidden relative">
+      <div ref={containerRef} className="bg-white rounded-b-astral shadow-sm border border-slate-100 border-t-0 flex-1 flex flex-col overflow-hidden relative">
         <AnimatePresence mode="wait">
           <motion.div
             key={effectiveView === 'week' ? `week-${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')}` : `day-${format(currentDate, 'yyyy-MM-dd')}`}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={{ duration: 0.20 }}
             className="h-full"
-            drag={isMobile ? "x" : false} 
+            drag={isMobile && !draggedEvent && effectiveView === 'day' ? "x" : false}
             dragConstraints={{ left: 0, right: 0 }} 
             dragElastic={0.1} 
             onDrag={handleDrag} 
@@ -433,10 +529,42 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           onEdit={handleEventEdit}
           onDelete={handleEventDelete}
         />
+
+        {/* Edge Hover Indicators (Mobile Day View Only) */}
+        {isMobile && effectiveView === 'day' && draggedEvent && (
+            <>
+                {/* Left Edge Indicator */}
+                <div className={cn(
+                    "absolute top-0 left-0 bottom-0 w-1/4 bg-gradient-to-r from-blue-200/50 via-blue-200/10 to-transparent pointer-events-none transition-opacity duration-300 z-20", // Increased z-index
+                    edgeHoverState === 'left' ? "opacity-100" : "opacity-0"
+                )}>
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 opacity-75 bg-white/70 rounded-full p-1 backdrop-blur-sm">
+                        {/* Placeholder Icon - Replace with actual icon later */}
+                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                         </svg>
+                    </div>
+                </div>
+                 {/* Right Edge Indicator */}
+                <div className={cn(
+                    "absolute top-0 right-0 bottom-0 w-1/4 bg-gradient-to-l from-blue-200/50 via-blue-200/10 to-transparent pointer-events-none transition-opacity duration-300 z-20", // Increased z-index
+                     edgeHoverState === 'right' ? "opacity-100" : "opacity-0"
+                )}>
+                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 opacity-75 bg-white/70 rounded-full p-1 backdrop-blur-sm">
+                         {/* Placeholder Icon - Replace with actual icon later */}
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
+                          </svg>
+                    </div>
+                </div>
+            </>
+        )}
       </div>
       
-      <DragOverlay dropAnimation={null}> 
-        {draggedEvent ? <EventCard event={draggedEvent} onClick={() => {}} /> : null} 
+      <DragOverlay dropAnimation={null} style={{ touchAction: 'none' }}>
+        {draggedEvent ? (
+           <EventCard event={draggedEvent} onClick={() => {}} />
+        ) : null}
       </DragOverlay>
      </DndContext>
   );
