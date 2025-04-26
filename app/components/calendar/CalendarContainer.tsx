@@ -131,16 +131,18 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   }, [filteredEvents, effectiveView]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: { distance: 5 },
-    }),
-    useSensor(TouchSensor, {
-      // Press delay of 250ms, with tolerance of 5px of movement
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    }),
+    isMobile ? 
+      useSensor(TouchSensor, {
+        // Press delay of 250ms, with tolerance of 5px of movement for mobile
+        activationConstraint: {
+          delay: 250,
+          tolerance: 5,
+        },
+      }) : 
+      useSensor(PointerSensor, {
+        // Require the mouse pointer to move by 5 pixels before activating on desktop
+        activationConstraint: { distance: 5 },
+      }),
     useSensor(KeyboardSensor, {
         coordinateGetter: sortableKeyboardCoordinates,
     })
