@@ -1,33 +1,30 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --foreground-rgb: 0, 0, 0;
-  --background-start-rgb: 214, 219, 220;
-  --background-end-rgb: 255, 255, 255;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --foreground-rgb: 255, 255, 255;
-    --background-start-rgb: 0, 0, 0;
-    --background-end-rgb: 0, 0, 0;
+@layer base {
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+  
+  body {
+    @apply bg-astral-white text-slate-800;
   }
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: linear-gradient(
-      to bottom,
-      transparent,
-      rgb(var(--background-end-rgb))
-    )
-    rgb(var(--background-start-rgb));
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
+@layer components {
+  .btn-primary {
+    @apply bg-astral-yellow text-slate-800 font-medium py-2 px-4 rounded-astral transition-all hover:shadow-md active:shadow-inner;
+  }
+  
+  .btn-secondary {
+    @apply bg-white border border-slate-200 text-slate-700 font-medium py-2 px-4 rounded-astral transition-all hover:shadow-sm hover:bg-slate-50;
+  }
+  
+  .card {
+    @apply bg-white rounded-astral shadow-sm border border-slate-100 p-4;
   }
 }
+
