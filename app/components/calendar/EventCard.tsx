@@ -77,7 +77,6 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
           onClick(event);
         }
       }}
-      layout
       whileHover={{ y: -2 }}
     >
       {/* Image Section - Full width, consistent height */}
