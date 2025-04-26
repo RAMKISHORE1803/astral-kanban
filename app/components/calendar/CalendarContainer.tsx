@@ -65,7 +65,7 @@ const getRandomElement = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr
 
 // Constants for edge detection
 const EDGE_ZONE_WIDTH_PERCENTAGE = 0.25; // 25%
-const EDGE_HOVER_DELAY_MS = 500; // 0.5 seconds
+const EDGE_HOVER_DELAY_MS = 1500; // 1.5 seconds (Changed from 500)
 
 const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContainerProps) => {
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -407,17 +407,19 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
 
   // --- Render Logic ---
   const renderDayViewContent = () => {
-    const dayEvents = filteredEvents;
-    
+    // Filter directly inside render function for simplicity, or keep memoized
+    const dayEvents = allEvents.filter(event => event.date === format(currentDate, "yyyy-MM-dd"));
     const dragDate = format(currentDate, "yyyy-MM-dd");
-    
+
     return (
       <SortableContext items={dayEvents.map(e => e.id)} strategy={verticalListSortingStrategy}>
-          <div 
+          {/* Added inline style for touch-action */}
+          <div
             className={cn(
               "p-4 space-y-0 overflow-y-auto h-full",
               activeDroppableId === dragDate && "bg-blue-50/50 transition-colors duration-150"
             )}
+            style={{ touchAction: 'pan-y' }} // Allow vertical scrolling
           >
             {dayEvents.length === 0 ? (
               <p className="text-center text-slate-500 pt-10">No events scheduled.</p>
@@ -535,26 +537,40 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
             <>
                 {/* Left Edge Indicator */}
                 <div className={cn(
-                    "absolute top-0 left-0 bottom-0 w-1/4 bg-gradient-to-r from-blue-200/50 via-blue-200/10 to-transparent pointer-events-none transition-opacity duration-300 z-20", // Increased z-index
-                    edgeHoverState === 'left' ? "opacity-100" : "opacity-0"
+                    "absolute top-0 left-0 bottom-0 w-1/4 bg-gradient-to-r from-blue-200/30 via-blue-200/0 to-transparent pointer-events-none transition-opacity duration-300 z-20",
+                    // Show subtle indicator always during drag, full opacity on hover
+                    "opacity-20", // Base subtle visibility
+                    edgeHoverState === 'left' && "opacity-100" // Full visibility when hovered
                 )}>
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 opacity-75 bg-white/70 rounded-full p-1 backdrop-blur-sm">
-                        {/* Placeholder Icon - Replace with actual icon later */}
-                         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                           <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-                         </svg>
+                    <div className={cn(
+                      "absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 transition-opacity duration-300",
+                       // Icon also fades with hover state
+                      edgeHoverState === 'left' ? "opacity-75" : "opacity-50"
+                    )}>
+                        <div className="bg-white/70 rounded-full p-1 backdrop-blur-sm">
+                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+                          </svg>
+                        </div>
                     </div>
                 </div>
                  {/* Right Edge Indicator */}
                 <div className={cn(
-                    "absolute top-0 right-0 bottom-0 w-1/4 bg-gradient-to-l from-blue-200/50 via-blue-200/10 to-transparent pointer-events-none transition-opacity duration-300 z-20", // Increased z-index
-                     edgeHoverState === 'right' ? "opacity-100" : "opacity-0"
+                    "absolute top-0 right-0 bottom-0 w-1/4 bg-gradient-to-l from-blue-200/30 via-blue-200/0 to-transparent pointer-events-none transition-opacity duration-300 z-20",
+                    // Show subtle indicator always during drag, full opacity on hover
+                    "opacity-20", // Base subtle visibility
+                    edgeHoverState === 'right' && "opacity-100" // Full visibility when hovered
                 )}>
-                     <div className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 opacity-75 bg-white/70 rounded-full p-1 backdrop-blur-sm">
-                         {/* Placeholder Icon - Replace with actual icon later */}
+                     <div className={cn(
+                       "absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 transition-opacity duration-300",
+                        // Icon also fades with hover state
+                       edgeHoverState === 'right' ? "opacity-75" : "opacity-50"
+                      )}>
+                        <div className="bg-white/70 rounded-full p-1 backdrop-blur-sm">
                           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
                             <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
                           </svg>
+                        </div>
                     </div>
                 </div>
             </>
