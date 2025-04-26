@@ -130,22 +130,26 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     return grouped;
   }, [filteredEvents, effectiveView]);
 
+  // Initialize sensors unconditionally
+  const pointerSensor = useSensor(PointerSensor, {
+    // Require the mouse pointer to move by 5 pixels before activating on desktop
+    activationConstraint: { distance: 5 },
+  });
+  const touchSensor = useSensor(TouchSensor, {
+    // Press delay of 250ms, with tolerance of 5px of movement for mobile
+    activationConstraint: {
+      delay: 250,
+      tolerance: 5,
+    },
+  });
+  const keyboardSensor = useSensor(KeyboardSensor, {
+    coordinateGetter: sortableKeyboardCoordinates,
+  });
+
   const sensors = useSensors(
-    isMobile ? 
-      useSensor(TouchSensor, {
-        // Press delay of 250ms, with tolerance of 5px of movement for mobile
-        activationConstraint: {
-          delay: 250,
-          tolerance: 5,
-        },
-      }) : 
-      useSensor(PointerSensor, {
-        // Require the mouse pointer to move by 5 pixels before activating on desktop
-        activationConstraint: { distance: 5 },
-      }),
-    useSensor(KeyboardSensor, {
-        coordinateGetter: sortableKeyboardCoordinates,
-    })
+    // Conditionally pass the initialized sensor instances
+    isMobile ? touchSensor : pointerSensor,
+    keyboardSensor
   );
 
   // --- Drag Handlers ---
