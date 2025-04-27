@@ -224,12 +224,24 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     // Log the change
     console.log(`⚠️ DATE CHANGE ATTEMPT: ${format(currentDate, 'yyyy-MM-dd')} -> ${format(newDate, 'yyyy-MM-dd')}`);
     
+    // Update the event's date immediately if we're dragging an event
+    if (customDragState.isDragging && customDragState.event) {
+      const updatedEvent = {
+        ...customDragState.event,
+        date: format(newDate, "yyyy-MM-dd")
+      };
+      setCustomDragState(prev => ({
+        ...prev,
+        event: updatedEvent
+      }));
+    }
+    
     // Actually update the date
     onDateChange(newDate);
     
     // Log successful transition
     console.log("✅ Transition complete");
-  }, [currentDate, onDateChange]);
+  }, [currentDate, onDateChange, customDragState.isDragging, customDragState.event]);
 
   // Function to handle pointer movement for edge detection - REFINED LOGIC
   const handlePointerMove = useCallback((clientX: number, clientY: number) => {
@@ -244,41 +256,32 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       position: { x: clientX, y: clientY }
     }));
 
-    console.log(`[PointerMove] Pos: ${clientX.toFixed(1)}, ${clientY.toFixed(1)}`); // Log position
-
     // Edge detection
     const containerRect = containerRef.current.getBoundingClientRect();
     const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
     const leftEdgeBoundary = containerRect.left + edgeWidth;
     const rightEdgeBoundary = containerRect.right - edgeWidth;
 
-    console.log(`[PointerMove] Bounds: L=${leftEdgeBoundary.toFixed(1)}, R=${rightEdgeBoundary.toFixed(1)}, EdgeWidth=${edgeWidth.toFixed(1)}`); // Log boundaries
-
     // Left edge detection - IMMEDIATE DATE CHANGE
     if (clientX < leftEdgeBoundary) {
-      console.log("[PointerMove] Left Edge Detected - Triggering Date Change");
-      // Update hover state
       if (customDragState.currentlyHovering !== 'left') {
         setCustomDragState(prev => ({ ...prev, currentlyHovering: 'left' }));
-        triggerDateChange('left'); // Trigger immediately
+        triggerDateChange('left');
       }
     }
     // Right edge detection - IMMEDIATE DATE CHANGE
     else if (clientX > rightEdgeBoundary) {
-      console.log("[PointerMove] Right Edge Detected - Triggering Date Change");
-      // Update hover state
       if (customDragState.currentlyHovering !== 'right') {
         setCustomDragState(prev => ({ ...prev, currentlyHovering: 'right' }));
-        triggerDateChange('right'); // Trigger immediately
+        triggerDateChange('right');
       }
     }
     // Not at any edge
     else if (customDragState.currentlyHovering !== null) {
-      console.log("[PointerMove] Exited Edge Zone");
       setCustomDragState(prev => ({ ...prev, currentlyHovering: null }));
     }
     
-    // Find event under the cursor for reordering (unchanged)
+    // Find event under the cursor for reordering
     const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
     const eventCardsUnderCursor = elementsAtPoint.filter(el => {
       const eventCard = el.closest('.event-card');
@@ -325,35 +328,26 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       if (targetEvent) {
         // Same day reordering
         if (targetEvent.date === droppedEvent.date) {
-          // Reorder events
           setAllEvents(prevEvents => {
             const oldIndex = prevEvents.findIndex(e => e.id === droppedEvent.id);
             const newIndex = prevEvents.findIndex(e => e.id === targetEvent.id);
             
             if (oldIndex === -1 || newIndex === -1) return prevEvents;
             
-            // Create a new array with the item moved to the new position
             const newArray = [...prevEvents];
             const [movedItem] = newArray.splice(oldIndex, 1);
             newArray.splice(newIndex, 0, movedItem);
             
             return newArray;
           });
-          console.log(`Reordered ${droppedEvent.id} within day ${droppedEvent.date}`);
         }
         // Moving to different day at specific position
         else {
           setAllEvents(prevEvents => {
-            // Create a copy without the dragged event
             const withoutDragged = prevEvents.filter(e => e.id !== droppedEvent.id);
-            
-            // Find the index where we want to insert
             const targetIndex = withoutDragged.findIndex(e => e.id === targetEvent.id);
-            
-            // Update the dragged event with new date
             const updatedEvent = { ...droppedEvent, date: targetEvent.date };
             
-            // Insert at proper position
             if (targetIndex !== -1) {
               const result = [...withoutDragged];
               result.splice(targetIndex, 0, updatedEvent);
@@ -362,20 +356,16 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
               return [...withoutDragged, updatedEvent];
             }
           });
-          console.log(`Moved ${droppedEvent.id} from ${droppedEvent.date} to ${targetEvent.date} at position near ${targetEvent.id}`);
         }
       }
     }
     // Simple date change without specific reordering
     else if (customDragState.startedOn !== targetDateStr) {
-      // Update the event's date
       setAllEvents(prev => prev.map(evt => 
         evt.id === droppedEvent.id
           ? { ...evt, date: targetDateStr }
           : evt
       ));
-      
-      console.log(`Moved ${droppedEvent.id} from ${customDragState.startedOn} to ${targetDateStr}`);
     }
     
     // Reset drag state
@@ -389,7 +379,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     });
     
     // Reset other state
-    edgeTimerRef.current = null;
     console.log(`Drag operation completed with ${debugRef.current.transitionsCompleted}/${debugRef.current.transitionsAttempted} transitions`);
   }, [customDragState, currentDate, allEvents]);
   
