@@ -68,6 +68,9 @@ const EDGE_ZONE_WIDTH_PERCENTAGE = 0.25; // 25%
 const EDGE_HOVER_DELAY_MS = 1500; // 1.5 seconds (Changed from 500)
 
 const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContainerProps) => {
+  // ...existing code...
+  // isMobile is already defined
+
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [allEvents, setAllEvents] = useState<KanbanEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState<KanbanEvent | null>(null);
@@ -415,29 +418,34 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       <SortableContext items={dayEvents.map(e => e.id)} strategy={verticalListSortingStrategy}>
         {/* Edge peek overlays for mobile edge drag */}
         {isMobile && draggedEvent && (
-          <>
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              animate={{
-                opacity: edgeHoverState === 'left' ? 1 : 0,
-                x: edgeHoverState === 'left' ? 0 : -30
-              }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="absolute top-0 left-0 h-full w-6 z-30 pointer-events-none"
-              style={{ background: 'linear-gradient(90deg, #3b66ff22 80%, transparent)' }}
-            />
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              animate={{
-                opacity: edgeHoverState === 'right' ? 1 : 0,
-                x: edgeHoverState === 'right' ? 0 : 30
-              }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-              className="absolute top-0 right-0 h-full w-6 z-30 pointer-events-none"
-              style={{ background: 'linear-gradient(270deg, #3b66ff22 80%, transparent)' }}
-            />
-          </>
-        )}
+  <>
+    {/* Highlight edge zones for mobile edge drag */}
+    <div className="absolute top-0 left-0 h-full w-1/4 z-40 pointer-events-none bg-green-300/40 rounded-l-astral animate-pulse" />
+    <div className="absolute top-0 right-0 h-full w-1/4 z-40 pointer-events-none bg-yellow-300/40 rounded-r-astral animate-pulse" />
+
+    {/* Existing animated edge indicators for feedback */}
+    <motion.div
+      initial={{ opacity: 0, x: -30 }}
+      animate={{
+        opacity: edgeHoverState === 'left' ? 1 : 0,
+        x: edgeHoverState === 'left' ? 0 : -30
+      }}
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className="absolute top-0 left-0 h-full w-6 z-50 pointer-events-none"
+      style={{ background: 'linear-gradient(90deg, #3b66ff22 80%, transparent)' }}
+    />
+    <motion.div
+      initial={{ opacity: 0, x: 30 }}
+      animate={{
+        opacity: edgeHoverState === 'right' ? 1 : 0,
+        x: edgeHoverState === 'right' ? 0 : 30
+      }}
+      transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+      className="absolute top-0 right-0 h-full w-6 z-50 pointer-events-none"
+      style={{ background: 'linear-gradient(270deg, #3b66ff22 80%, transparent)' }}
+    />
+  </>
+)}
         <motion.div
           className={cn(
             "p-4 space-y-0 overflow-y-auto h-full relative",
@@ -533,7 +541,13 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
     >
-      <div ref={containerRef} className="bg-white rounded-b-astral shadow-sm border border-slate-100 border-t-0 flex-1 flex flex-col overflow-hidden relative">
+      <div
+  ref={containerRef}
+  className={cn(
+    "bg-white rounded-b-astral shadow-sm border border-slate-100 border-t-0 flex-1 flex flex-col relative",
+    isMobile && "border-4 border-red-500 min-h-[calc(100dvh-56px)] h-[calc(100dvh-56px)] overflow-y-auto"
+  )}
+>
         <AnimatePresence mode="wait">
           <motion.div
             key={effectiveView === 'week' ? `week-${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')}` : `day-${format(currentDate, 'yyyy-MM-dd')}`}
