@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Header from "./components/calendar/Header";
 import CalendarContainer from "./components/calendar/CalendarContainer";
 import { useMediaQuery } from "./lib/hooks/useMediaQuery";
+import { format } from "date-fns";
 
 export default function Home() {
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -18,6 +19,7 @@ export default function Home() {
 
   // Function to handle date changes from header or container (swipe/drag)
   const handleDateChange = (newDate: Date) => {
+    console.log(`[Home] handleDateChange received: ${format(newDate, 'yyyy-MM-dd')}`);
     setCurrentDate(newDate);
   };
 
