@@ -407,38 +407,65 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
 
   // --- Render Logic ---
   const renderDayViewContent = () => {
-    // Filter directly inside render function for simplicity, or keep memoized
     const dayEvents = allEvents.filter(event => event.date === format(currentDate, "yyyy-MM-dd"));
     const dragDate = format(currentDate, "yyyy-MM-dd");
-
+    // Peek effect: true if edgeHoverState is set and a card is being dragged
+    const isPeeking = Boolean(isMobile && draggedEvent && edgeHoverState);
     return (
       <SortableContext items={dayEvents.map(e => e.id)} strategy={verticalListSortingStrategy}>
-          {/* Added inline style for touch-action */}
-          <div
-            className={cn(
-              "p-4 space-y-0 overflow-y-auto h-full",
-              activeDroppableId === dragDate && "bg-blue-50/50 transition-colors duration-150"
-            )}
-            style={{ touchAction: 'pan-y' }} // Allow vertical scrolling
-          >
-            {dayEvents.length === 0 ? (
-              <p className="text-center text-slate-500 pt-10">No events scheduled.</p>
-            ) : (
-              dayEvents.map(event => (
-                <EventCard 
-                  key={event.id} 
-                  event={event} 
-                  onClick={handleEventClick} 
-                />
-              ))
-            )}
-            {/* Drop indicator placeholder - shows when dragging */}
-            {draggedEvent && dayEvents.length === 0 && activeDroppableId === dragDate && (
-              <div className="h-28 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50/50 flex items-center justify-center mt-2">
-                <p className="text-blue-500 text-sm">Drop to add to this day</p>
-              </div>
-            )}
-          </div>
+        {/* Edge peek overlays for mobile edge drag */}
+        {isMobile && draggedEvent && (
+          <>
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              animate={{
+                opacity: edgeHoverState === 'left' ? 1 : 0,
+                x: edgeHoverState === 'left' ? 0 : -30
+              }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="absolute top-0 left-0 h-full w-6 z-30 pointer-events-none"
+              style={{ background: 'linear-gradient(90deg, #3b66ff22 80%, transparent)' }}
+            />
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              animate={{
+                opacity: edgeHoverState === 'right' ? 1 : 0,
+                x: edgeHoverState === 'right' ? 0 : 30
+              }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="absolute top-0 right-0 h-full w-6 z-30 pointer-events-none"
+              style={{ background: 'linear-gradient(270deg, #3b66ff22 80%, transparent)' }}
+            />
+          </>
+        )}
+        <motion.div
+          className={cn(
+            "p-4 space-y-0 overflow-y-auto h-full relative",
+            activeDroppableId === dragDate && "bg-blue-50/50 transition-colors duration-150"
+          )}
+          style={{ touchAction: 'pan-y' }}
+          animate={isPeeking ? {
+            x: edgeHoverState === 'left' ? 20 : edgeHoverState === 'right' ? -20 : 0
+          } : { x: 0 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+        >
+          {dayEvents.length === 0 ? (
+            <p className="text-center text-slate-500 pt-10">No events scheduled.</p>
+          ) : (
+            dayEvents.map(event => (
+              <EventCard 
+                key={event.id} 
+                event={event} 
+                onClick={handleEventClick} 
+              />
+            ))
+          )}
+          {draggedEvent && dayEvents.length === 0 && activeDroppableId === dragDate && (
+            <div className="h-28 border-2 border-dashed border-blue-300 rounded-lg bg-blue-50/50 flex items-center justify-center mt-2">
+              <p className="text-blue-500 text-sm">Drop to add to this day</p>
+            </div>
+          )}
+        </motion.div>
       </SortableContext>
     );
   };
@@ -519,70 +546,20 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
             dragConstraints={{ left: 0, right: 0 }} 
             dragElastic={0.1} 
             onDrag={handleDrag} 
-            onDragEnd={handleDragEndSwipe} 
           >
-            {effectiveView === "week" ? renderWeekViewContent() : renderDayViewContent()}
+            {effectiveView === 'week' ? renderWeekViewContent() : renderDayViewContent()}
           </motion.div>
         </AnimatePresence>
-
-        <EventDetail
-          event={selectedEvent}
-          onClose={handleEventClose}
-          onEdit={handleEventEdit}
-          onDelete={handleEventDelete}
-        />
-
-        {/* Edge Hover Indicators (Mobile Day View Only) */}
-        {isMobile && effectiveView === 'day' && draggedEvent && (
-            <>
-                {/* Left Edge Indicator */}
-                <div className={cn(
-                    "absolute top-0 left-0 bottom-0 w-1/4 bg-gradient-to-r from-blue-200/30 via-blue-200/0 to-transparent pointer-events-none transition-opacity duration-300 z-20",
-                    // Show subtle indicator always during drag, full opacity on hover
-                    "opacity-20", // Base subtle visibility
-                    edgeHoverState === 'left' && "opacity-100" // Full visibility when hovered
-                )}>
-                    <div className={cn(
-                      "absolute left-3 top-1/2 -translate-y-1/2 text-blue-500 transition-opacity duration-300",
-                       // Icon also fades with hover state
-                      edgeHoverState === 'left' ? "opacity-75" : "opacity-50"
-                    )}>
-                        <div className="bg-white/70 rounded-full p-1 backdrop-blur-sm">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-                          </svg>
-                        </div>
-                    </div>
-                </div>
-                 {/* Right Edge Indicator */}
-                <div className={cn(
-                    "absolute top-0 right-0 bottom-0 w-1/4 bg-gradient-to-l from-blue-200/30 via-blue-200/0 to-transparent pointer-events-none transition-opacity duration-300 z-20",
-                    // Show subtle indicator always during drag, full opacity on hover
-                    "opacity-20", // Base subtle visibility
-                    edgeHoverState === 'right' && "opacity-100" // Full visibility when hovered
-                )}>
-                     <div className={cn(
-                       "absolute right-3 top-1/2 -translate-y-1/2 text-blue-500 transition-opacity duration-300",
-                        // Icon also fades with hover state
-                       edgeHoverState === 'right' ? "opacity-75" : "opacity-50"
-                      )}>
-                        <div className="bg-white/70 rounded-full p-1 backdrop-blur-sm">
-                          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="m8.25 4.5 7.5 7.5-7.5 7.5" />
-                          </svg>
-                        </div>
-                    </div>
-                </div>
-            </>
-        )}
+        {/* DragOverlay: ensure the card stays attached visually during edge-traversal */}
+        <DragOverlay dropAnimation={null}>
+          {draggedEvent && (
+            <div className="pointer-events-none z-50">
+              <EventCard event={draggedEvent} onClick={() => {}} />
+            </div>
+          )}
+        </DragOverlay>
       </div>
-      
-      <DragOverlay dropAnimation={null} style={{ touchAction: 'none' }}>
-        {draggedEvent ? (
-           <EventCard event={draggedEvent} onClick={() => {}} />
-        ) : null}
-      </DragOverlay>
-     </DndContext>
+    </DndContext>
   );
 };
 
