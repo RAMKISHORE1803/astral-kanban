@@ -69,8 +69,10 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
         "relative z-0 group bg-white rounded-lg overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-2 hover:z-10",
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
+        "event-card",
         isDragging && "shadow-lg ring-2 ring-blue-400 rotate-1 scale-[1.02]"
       )}
+      data-event-id={event.id}
       onClick={(e) => {
         // Prevent drag from interfering with click
         if (!isDragging) {
@@ -78,6 +80,12 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
         }
       }}
       whileHover={{ y: -2 }}
+      onTouchStart={(e) => {
+        // This helps mobile browsers initiate drag immediately
+        if (!isDragging) {
+          e.currentTarget.style.webkitUserSelect = 'none';
+        }
+      }}
     >
       {/* Image Section - Full width, consistent height */}
       {event.imageUrl && (
@@ -86,6 +94,7 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
             src={event.imageUrl}
             alt=""
             className="absolute inset-0 h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+            draggable="false"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
         </div>
