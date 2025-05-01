@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { format, isSameDay, startOfWeek, endOfWeek, eachDayOfInterval, addHours, addDays, subDays } from "date-fns";
-import { motion, AnimatePresence, PanInfo } from "framer-motion";
+import { motion, AnimatePresence, PanInfo, useMotionValue, useTransform, animate } from "framer-motion";
 import { KanbanEvent } from "@/app/lib/utils";
 import EventCard from "./EventCard";
 import EventDetail from "./EventDetail";
@@ -41,7 +41,7 @@ function updateGlobalOverlayPosition() {
   // Apply position with transform for better performance
   globalDragTracking.activeOverlay.style.transform = 
     `translate3d(${x - globalDragTracking.offsetX}px, ${y - globalDragTracking.offsetY}px, 0)`;
-  
+
   // Continue the animation loop
   globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
 }
@@ -90,7 +90,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
 
   // Track whether we're in a transition
   const isTransitioningRef = useRef(false);
-  
+    
   // Add a ref to track the last transition time
   const lastTransitionTimeRef = useRef(0);
   
@@ -128,7 +128,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     });
     return grouped;
   }, [filteredEvents, effectiveView]);
-  
+
   // Initialize draggable overlay as a DOM element outside React - completely isolated
   useEffect(() => {
     // Create a stable overlay that won't be affected by React rendering
@@ -162,7 +162,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       overlayDiv.style.willChange = 'transform';
       overlayDiv.style.backfaceVisibility = 'hidden'; // Prevent paint flickering
       overlayDiv.setAttribute('aria-hidden', 'true');
-      
+    
       // Add to document body - outside React's control
       document.body.appendChild(overlayDiv);
       globalDragTracking.activeOverlay = overlayDiv;
@@ -184,7 +184,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         // Ensure animation frame is running
         if (!globalDragTracking.animationFrame) {
           globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
-        }
+    }
       }
     };
     
@@ -224,7 +224,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     // Update global tracking state
     globalDragTracking.isTracking = true;
     globalDragTracking.currentPosition = { x: clientX, y: clientY };
-    
+
     // Set up the overlay with the event card content
     if (globalDragTracking.activeOverlay) {
       // Clear any existing content
@@ -288,7 +288,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
                 cancelAnimationFrame(globalDragTracking.animationFrame);
               }
               globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
-            }, 200); // Match animation duration
+            }, 200);
           }
         }, 0);
       } else {
@@ -316,7 +316,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       position: { x: clientX, y: clientY },
       startedOn: event.date,
       currentlyHovering: null,
-      dropTargetId: null
+          dropTargetId: null
     });
     
     // Prevent scrolling during drag
@@ -334,7 +334,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     if (!customDragState.isDragging || !customDragState.event) {
       return;
     }
-
+    
     console.log("Finalizing drag - making it simple and reliable");
     
     // Stop global tracking
@@ -346,13 +346,60 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       globalDragTracking.animationFrame = null;
     }
     
-    // Calculate target date based on current date
-    const targetDateStr = format(currentDate, "yyyy-MM-dd");
+    // Default target date based on current date
+    const defaultTargetDateStr = format(currentDate, "yyyy-MM-dd");
+    let targetDateStr = defaultTargetDateStr;
     const droppedEvent = customDragState.event;
     
     // SIMPLIFIED: Always update the event's date to the current day regardless of animation
-    // This ensures the data model is updated properly
     if (droppedEvent) {
+      // Find the proper insertion position based on where mouse/finger is
+      let insertAt = -1;
+      if (customDragState.position) {
+        const { x, y } = customDragState.position;
+        
+        // Use document.elementsFromPoint to find what we're hovering over
+        const elementsAtPoint = document.elementsFromPoint(x, y);
+        
+        // Find the column we're dropping in
+        const columnElement = elementsAtPoint.find(el => 
+          el.hasAttribute('data-date') || el.closest('[data-date]')
+        );
+        
+        if (columnElement) {
+          const dateAttr = columnElement.getAttribute('data-date') || 
+                          columnElement.closest('[data-date]')?.getAttribute('data-date');
+          
+          if (dateAttr) {
+            // THIS IS THE FIX: Actually use the column date instead of currentDate
+            targetDateStr = dateAttr;
+            console.log(`Detected drop in column with date: ${targetDateStr}`);
+          }
+        }
+        
+        // Find the event card we might be hovering over for insert position
+        const eventCardElement = elementsAtPoint.find(el => 
+          el.classList.contains('event-card') || el.closest('.event-card')
+        );
+        
+        if (eventCardElement) {
+          const eventCard = eventCardElement.classList.contains('event-card') 
+            ? eventCardElement 
+            : eventCardElement.closest('.event-card');
+          
+          const targetEventId = eventCard?.getAttribute('data-event-id');
+          
+          // Find the index of this event in the array
+          if (targetEventId) {
+            const eventsInColumn = allEvents.filter(e => e.date === targetDateStr);
+            const targetIndex = eventsInColumn.findIndex(e => e.id === targetEventId);
+            if (targetIndex !== -1) {
+              insertAt = targetIndex;
+            }
+          }
+        }
+      }
+      
       console.log(`Moving event "${droppedEvent.title}" to ${targetDateStr}`);
       
       setAllEvents(prev => {
@@ -365,10 +412,25 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           date: targetDateStr
         };
         
-        // Simply add it to the end of the array
-        return [...eventsWithoutDragged, updatedEvent];
-      });
-    }
+        // Get events for the target date
+        const dateEvents = eventsWithoutDragged.filter(e => e.date === targetDateStr);
+        
+        if (insertAt === -1) {
+          // Add at end if no specific position
+          return [...eventsWithoutDragged, updatedEvent];
+            } else {
+          // Insert at specified position within the same date events
+          const newDateEvents = [...dateEvents];
+          newDateEvents.splice(insertAt, 0, updatedEvent);
+          
+          // Replace date events in the full list
+          return [
+            ...eventsWithoutDragged.filter(e => e.date !== targetDateStr),
+            ...newDateEvents
+          ];
+            }
+          });
+        }
     
     // Only now, handle the visual animation
     if (globalDragTracking.activeOverlay) {
@@ -512,9 +574,57 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       return;
     }
     
-    // Calculate target date (current view date)
-    const targetDateStr = format(currentDate, "yyyy-MM-dd");
+    // Default target date based on current date
+    const defaultTargetDateStr = format(currentDate, "yyyy-MM-dd");
+    let targetDateStr = defaultTargetDateStr;
     const droppedEvent = customDragState.event;
+    
+    // Find the proper insertion position based on where mouse/finger is
+    let insertAt = -1;
+    if (customDragState.position) {
+      const { x, y } = customDragState.position;
+      
+      // Use document.elementsFromPoint to find what we're hovering over
+      const elementsAtPoint = document.elementsFromPoint(x, y);
+      
+      // Find the column we're dropping in
+      const columnElement = elementsAtPoint.find(el => 
+        el.hasAttribute('data-date') || el.closest('[data-date]')
+      );
+      
+      if (columnElement) {
+        const dateAttr = columnElement.getAttribute('data-date') || 
+                        columnElement.closest('[data-date]')?.getAttribute('data-date');
+        
+        if (dateAttr) {
+          // THIS IS THE FIX: Actually use the column date instead of currentDate
+          targetDateStr = dateAttr;
+          console.log(`Force drop: Detected column with date: ${targetDateStr}`);
+        }
+      }
+      
+      // Find the event card we might be hovering over for insert position
+      const eventCardElement = elementsAtPoint.find(el => 
+        el.classList.contains('event-card') || el.closest('.event-card')
+      );
+      
+      if (eventCardElement) {
+        const eventCard = eventCardElement.classList.contains('event-card') 
+          ? eventCardElement 
+          : eventCardElement.closest('.event-card');
+        
+        const targetEventId = eventCard?.getAttribute('data-event-id');
+        
+        // Find the index of this event in the array
+        if (targetEventId) {
+          const eventsInColumn = allEvents.filter(e => e.date === targetDateStr);
+          const targetIndex = eventsInColumn.findIndex(e => e.id === targetEventId);
+          if (targetIndex !== -1) {
+            insertAt = targetIndex;
+          }
+        }
+      }
+    }
     
     console.log(`Force drop: Moving event "${droppedEvent.title}" to ${targetDateStr}`);
     
@@ -529,8 +639,23 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         date: targetDateStr
       };
       
-      // Add to the end of the array
-      return [...eventsWithoutDragged, updatedEvent];
+      // Get events for the target date
+      const dateEvents = eventsWithoutDragged.filter(e => e.date === targetDateStr);
+      
+      if (insertAt === -1) {
+        // Add at end if no specific position
+        return [...eventsWithoutDragged, updatedEvent];
+      } else {
+        // Insert at specified position within the same date events
+        const newDateEvents = [...dateEvents];
+        newDateEvents.splice(insertAt, 0, updatedEvent);
+        
+        // Replace date events in the full list
+        return [
+          ...eventsWithoutDragged.filter(e => e.date !== targetDateStr),
+          ...newDateEvents
+        ];
+      }
     });
     
     // Hide the overlay immediately
@@ -570,7 +695,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     
     console.log("Force drop completed");
   }, [customDragState, currentDate, allEvents]);
-
+  
   // Update the global event listener effect to use capture phase and forceDrop
   useEffect(() => {
     if (!customDragState.isDragging) return;
@@ -735,7 +860,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     setAllEvents(generatedEvents);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  
+
   // Logging when currentDate changes
   useEffect(() => {
     console.log(`Current date updated to: ${format(currentDate, 'yyyy-MM-dd')}`);
@@ -752,7 +877,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       }));
     }
   }, [currentDate, customDragState.isDragging]);
-  
+
   // Mobile swipe navigation (when not dragging)
   const handleSwipe = useCallback((
     event: MouseEvent | TouchEvent | PointerEvent, 
@@ -795,12 +920,85 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     document.body.classList.remove('calendar-dragging');
   }, []);
 
-  // Place event handlers before render/JSX
-  const handleEventClick = useCallback((event: KanbanEvent) => {
+  // Replace the simpler animation state with Framer Motion approach
+  const [detailViewEvent, setDetailViewEvent] = useState<KanbanEvent | null>(null);
+  const [detailViewState, setDetailViewState] = useState<'closed' | 'opening' | 'open' | 'closing'>('closed');
+  const originRectRef = useRef<{x: number, y: number, width: number, height: number, scrollY: number} | null>(null);
+  const detailRef = useRef<HTMLDivElement>(null);
+
+  // Simplified function to open detail view with Framer Motion
+  const handleEventCardClick = useCallback((event: KanbanEvent, cardElement: HTMLElement) => {
+    // Don't open detailed view if we're dragging
     if (customDragState.isDragging) return;
-    setSelectedEvent(event);
+    
+    // Get starting position for the animation
+    const rect = cardElement.getBoundingClientRect();
+    originRectRef.current = {
+      x: rect.left,
+      y: rect.top,
+      width: rect.width,
+      height: rect.height,
+      scrollY: window.scrollY
+    };
+    
+    // Disable scrolling during animation
+    document.body.style.overflow = 'hidden';
+    
+    // Set event and initiate opening animation sequence
+    setDetailViewEvent(event);
+    setDetailViewState('opening');
+    
+    // Transition to open state after animation completes
+    setTimeout(() => {
+      setDetailViewState('open');
+      
+      // Haptic feedback
+      if (navigator.vibrate) navigator.vibrate(15);
+    }, 300);
   }, [customDragState.isDragging]);
 
+  // Simplified function to close detail view
+  const closeDetailView = useCallback(() => {
+    // Start closing animation
+    setDetailViewState('closing');
+    
+    // Haptic feedback
+    if (navigator.vibrate) navigator.vibrate(10);
+    
+    // After animation completes, reset the state
+    setTimeout(() => {
+      setDetailViewState('closed');
+      setDetailViewEvent(null);
+      originRectRef.current = null;
+      
+      // Re-enable scrolling
+      document.body.style.overflow = '';
+    }, 300);
+  }, []);
+
+  // Update the handleEventClick function to work with both signatures
+  const handleEventClick = useCallback((event: KanbanEvent, cardElement?: HTMLElement) => {
+    if (customDragState.isDragging) return;
+    
+    // Use cardElement if provided directly, otherwise find it by ID
+    let element = cardElement;
+    if (!element) {
+      element = document.querySelector(`[data-event-id="${event.id}"]`) as HTMLElement;
+    }
+    
+    if (element) {
+      // Use our detailed view opening function
+      handleEventCardClick(event, element);
+    } else {
+      // Fallback if element can't be found
+      console.log('Event card element not found, opening without animation');
+      setDetailViewEvent(event);
+      setDetailViewState('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }, [customDragState.isDragging, handleEventCardClick]);
+
+  // Add the missing handleEventMouseDown function before the render logic
   const handleEventMouseDown = useCallback((event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => {
     // Only prevent default for mouse events, touchmove handler manages touch prevention
     if (!('touches' in e)) {
@@ -822,22 +1020,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     startCustomDrag(event, clientX, clientY);
   }, [startCustomDrag]);
 
-  const handleEventClose = useCallback(() => {
-    setSelectedEvent(null);
-  }, []);
-
-  const handleEventEdit = useCallback((event: KanbanEvent) => {
-    console.log("Edit Event:", event);
-    handleEventClose();
-  }, [handleEventClose]);
-
-  const handleEventDelete = useCallback((eventId: string) => {
-    setAllEvents(prev => prev.filter((event) => event.id !== eventId));
-    handleEventClose();
-  }, [handleEventClose]);
-
   // --- Render Logic ---
-  
+
   return (
     <div
       ref={containerRef}
@@ -857,15 +1041,15 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       <AnimatePresence initial={false} mode="sync">
         <motion.div
           key={effectiveView === 'week' ? `week-${format(startOfWeek(currentDate, { weekStartsOn: 1 }), 'yyyy-MM-dd')}` : `day-${format(currentDate, 'yyyy-MM-dd')}`}
-          initial={{
+          initial={{ 
             opacity: 0,
             x: effectiveView === 'week' ? (prevDateRef.current && prevDateRef.current > currentDate ? -100 : 100) : 0
           }}
-          animate={{
+          animate={{ 
             opacity: 1,
-            x: 0
+            x: 0 
           }}
-          exit={{
+          exit={{ 
             opacity: 0,
             x: effectiveView === 'week' ? (prevDateRef.current && prevDateRef.current > currentDate ? 100 : -100) : 0
           }}
@@ -897,16 +1081,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           )}
         </motion.div>
       </AnimatePresence>
-
-      {/* Event detail dialog */}
-      {selectedEvent && (
-        <EventDetail 
-          event={selectedEvent} 
-          onClose={handleEventClose} 
-          onEdit={handleEventEdit}
-          onDelete={handleEventDelete}
-        />
-      )}
       
       {/* Escape key handler for cancelling drag */}
       {customDragState.isDragging && (
@@ -917,17 +1091,376 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         />
       )}
       
-      {/* Global CSS for animations */}
+      {/* Full-screen detailed event view */}
+      {detailViewEvent && (
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key="modal-backdrop"
+            className="fixed inset-0 z-[9999]"
+            initial={{ backgroundColor: 'rgba(0, 0, 0, 0)', backdropFilter: 'blur(0px)' }}
+            animate={{ 
+              backgroundColor: 'rgba(0, 0, 0, 0.85)', 
+              backdropFilter: 'blur(8px)'
+            }}
+            exit={{ 
+              backgroundColor: 'rgba(0, 0, 0, 0)', 
+              backdropFilter: 'blur(0px)',
+              transition: { duration: 0.5, ease: [0.32, 0.72, 0, 1] }
+            }}
+            transition={{ 
+              duration: 0.5, 
+              ease: [0.22, 1, 0.36, 1]
+            }}
+            onClick={closeDetailView}
+          >
+            <motion.div 
+              key="modal-content"
+              className="bg-white w-full h-full overflow-hidden fixed top-0 left-0"
+              style={{
+                originX: originRectRef.current ? (originRectRef.current.x + (originRectRef.current.width / 2)) / window.innerWidth : 0.5,
+                originY: originRectRef.current ? (originRectRef.current.y + (originRectRef.current.height / 2)) / window.innerHeight : 0.5,
+              }}
+              initial={{ 
+                borderRadius: '12px',
+                x: originRectRef.current?.x || 0,
+                y: originRectRef.current ? (originRectRef.current.y - window.scrollY + originRectRef.current.scrollY) : 0,
+                width: originRectRef.current?.width || '100%',
+                height: originRectRef.current?.height || '100%',
+                opacity: 1,
+                boxShadow: '0 0 0 rgba(0,0,0,0)',
+              }}
+              animate={{ 
+                borderRadius: 0,
+                x: 0,
+                y: 0,
+                width: '100%',
+                height: '100%',
+                opacity: 1,
+                boxShadow: '0 30px 60px rgba(0,0,0,0.3)',
+              }}
+              exit={{ 
+                borderRadius: '12px',
+                x: originRectRef.current?.x || 0,
+                y: originRectRef.current ? (originRectRef.current.y - window.scrollY + originRectRef.current.scrollY) : 0,
+                width: originRectRef.current?.width || 0,
+                height: originRectRef.current?.height || 0,
+                opacity: 0,
+                boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
+              }}
+              transition={{ 
+                type: "spring",
+                damping: 25, 
+                stiffness: 300,
+                mass: 0.85,
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <motion.div 
+                className="h-full w-full overflow-auto"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3 }}
+              >
+                {/* Hero header section with enhanced animations */}
+                <div className="relative w-full overflow-hidden" style={{ height: detailViewEvent.imageUrl ? '45vh' : '35vh' }}>
+                  {detailViewEvent.imageUrl ? (
+                    <motion.div 
+                      className="absolute inset-0"
+                      initial={{ opacity: 0.7 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0.7 }}
+                      transition={{ duration: 0.6 }}
+                    >
+                      {/* Background image with more dramatic scaling effect */}
+                      <motion.div 
+                        className="absolute inset-0 bg-cover bg-center"
+                        style={{ backgroundImage: `url(${detailViewEvent.imageUrl})` }}
+                        initial={{ scale: 1.1, filter: 'brightness(0.8) saturate(0.9)' }}
+                        animate={{ 
+                          scale: 1.05, 
+                          filter: 'brightness(0.9) saturate(1.1)' 
+                        }}
+                        exit={{ 
+                          scale: 1.15, 
+                          filter: 'brightness(0.8) saturate(0.9)',
+                          transition: { duration: 0.6 }
+                        }}
+                        transition={{ 
+                          duration: 1.2,
+                          ease: [0.22, 1, 0.36, 1]
+                        }}
+                      />
+                      
+                      {/* Enhanced gradient overlay with motion */}
+                      <motion.div 
+                        className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/70"
+                        initial={{ opacity: 0.5 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0.3 }}
+                        transition={{ duration: 0.8 }}
+                      />
+                    </motion.div>
+                  ) : (
+                    <motion.div 
+                      className="absolute inset-0 bg-gradient-to-br from-blue-600 to-indigo-800"
+                      initial={{ opacity: 0.8, background: "linear-gradient(to bottom right, #2563eb, #4338ca)" }}
+                      animate={{ 
+                        opacity: 1, 
+                        background: "linear-gradient(to bottom right, #3b82f6, #4f46e5)"
+                      }}
+                      exit={{ 
+                        opacity: 0.8, 
+                        background: "linear-gradient(to bottom right, #2563eb, #4338ca)"
+                      }}
+                      transition={{ duration: 0.8 }}
+                    />
+                  )}
+                  
+                  {/* Title and time info with orchestrated staggered animation */}
+                  <motion.div 
+                    className="absolute bottom-0 left-0 w-full p-6 pb-8 text-white"
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ 
+                      opacity: 0, 
+                      y: 20,
+                      transition: { duration: 0.25, ease: "easeIn" }
+                    }}
+                    transition={{ 
+                      duration: 0.5,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay: 0.15
+                    }}
+                  >
+                    <motion.div 
+                      className="flex items-center gap-2 text-white/90 mb-2 text-sm"
+                      initial={{ opacity: 0, y: 15, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ 
+                        opacity: 0, 
+                        y: 10, 
+                        scale: 0.95,
+                        transition: { duration: 0.2, ease: "easeIn" }
+                      }}
+                      transition={{ 
+                        duration: 0.4,
+                        ease: [0.22, 1, 0.36, 1],
+                        delay: 0.25
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10" />
+                        <path d="M12 6v6l4 2" />
+                      </svg>
+                      <span>{detailViewEvent.time}</span>
+                      <span className="mx-1">•</span>
+                      <span>{detailViewEvent.date}</span>
+                    </motion.div>
+                    
+                    <motion.h1 
+                      className="text-3xl font-bold text-white"
+                      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ 
+                        opacity: 0, 
+                        y: 15, 
+                        scale: 0.95,
+                        transition: { duration: 0.2, ease: "easeIn" }
+                      }}
+                      transition={{ 
+                        duration: 0.5,
+                        ease: [0.22, 1, 0.36, 1],
+                        delay: 0.35
+                      }}
+                      style={{ textShadow: '0 2px 10px rgba(0,0,0,0.15)' }}
+                    >
+                      {detailViewEvent.title}
+                    </motion.h1>
+                  </motion.div>
+                  
+                  {/* Close button with enhanced animation */}
+                  <motion.button
+                    className="absolute top-6 right-6 w-10 h-10 rounded-full bg-black/40 flex items-center justify-center text-white"
+                    onClick={closeDetailView}
+                    initial={{ opacity: 0, y: -20, scale: 0.8, rotate: -90 }}
+                    animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
+                    exit={{ 
+                      opacity: 0, 
+                      y: -15, 
+                      scale: 0.8, 
+                      rotate: -90,
+                      transition: { duration: 0.3, ease: [0.32, 0, 0.67, 0] }
+                    }}
+                    transition={{ 
+                      duration: 0.5,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay: 0.5
+                    }}
+                    style={{
+                      backdropFilter: 'blur(3px)',
+                      WebkitBackdropFilter: 'blur(3px)'
+                    }}
+                    whileHover={{ 
+                      scale: 1.1, 
+                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
+                      boxShadow: '0 0 20px rgba(0,0,0,0.2)'
+                    }}
+                    whileTap={{ scale: 0.9 }}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </motion.button>
+                </div>
+                
+                {/* Content area with orchestrated staggered animations */}
+                <div className="p-6 px-8 bg-white">
+                  {/* Description with enhanced animation */}
+                  <motion.div 
+                    className="mb-8"
+                    initial={{ opacity: 0, y: 40, x: -10 }}
+                    animate={{ opacity: 1, y: 0, x: 0 }}
+                    exit={{ 
+                      opacity: 0, 
+                      y: 30, 
+                      x: -5,
+                      transition: { duration: 0.25, ease: "easeIn" }
+                    }}
+                    transition={{ 
+                      duration: 0.6,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay: 0.45
+                    }}
+                  >
+                    <h2 className="text-xl font-semibold text-gray-800 mb-3">Description</h2>
+                    <p className="text-gray-600 leading-relaxed">
+                      {detailViewEvent.description || "No description available for this event."}
+                    </p>
+                  </motion.div>
+                  
+                  {/* Location section with enhanced animation */}
+                  <motion.div 
+                    className="mb-8"
+                    initial={{ opacity: 0, y: 45, x: -10 }}
+                    animate={{ opacity: 1, y: 0, x: 0 }}
+                    exit={{ 
+                      opacity: 0, 
+                      y: 35, 
+                      x: -5,
+                      transition: { duration: 0.25, ease: "easeIn" }
+                    }}
+                    transition={{ 
+                      duration: 0.6,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay: 0.55
+                    }}
+                  >
+                    <h2 className="text-xl font-semibold text-gray-800 mb-3">Location</h2>
+                    <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3 shadow-sm border border-gray-100">
+                      <div className="bg-blue-100 text-blue-500 p-2 rounded-full">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 22s-8-4.5-8-11.8a8 8 0 0 1 16 0c0 7.3-8 11.8-8 11.8z" />
+                          <circle cx="12" cy="10" r="3" />
+                        </svg>
+                      </div>
+                      <span className="text-gray-700">Meeting Room {Math.floor(Math.random() * 10) + 1}</span>
+                    </div>
+                  </motion.div>
+                  
+                  {/* Action buttons with enhanced animation */}
+                  <motion.div 
+                    className="flex gap-3 pt-4 border-t border-gray-200"
+                    initial={{ opacity: 0, y: 50, x: -10 }}
+                    animate={{ opacity: 1, y: 0, x: 0 }}
+                    exit={{ 
+                      opacity: 0, 
+                      y: 40, 
+                      x: -5,
+                      transition: { duration: 0.25, ease: "easeIn" }
+                    }}
+                    transition={{ 
+                      duration: 0.6,
+                      ease: [0.22, 1, 0.36, 1],
+                      delay: 0.65
+                    }}
+                  >
+                    <motion.button 
+                      className="flex-1 py-3.5 px-4 bg-gray-100 rounded-xl text-gray-700 font-medium flex items-center justify-center gap-2"
+                      onClick={closeDetailView}
+                      whileHover={{ 
+                        backgroundColor: "#e5e7eb", 
+                        scale: 1.02,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
+                      }}
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="15 18 9 12 15 6" />
+                      </svg>
+                      Back
+                    </motion.button>
+                    
+                    {/* <motion.button 
+                      className="flex-1 py-3.5 px-4 bg-blue-500 rounded-xl text-white font-medium flex items-center justify-center gap-2 shadow-md shadow-blue-500/20"
+                      onClick={() => {
+                        console.log('Edit event:', detailViewEvent);
+                        closeDetailView();
+                      }}
+                      whileHover={{ 
+                        backgroundColor: "#3b82f6", 
+                        scale: 1.02,
+                        boxShadow: '0 8px 20px rgba(59, 130, 246, 0.35)'
+                      }}
+                      whileTap={{ scale: 0.97 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                      Edit Event
+                    </motion.button> */}
+                  </motion.div>
+                </div>
+              </motion.div>
+            </motion.div>
+          </motion.div>
+        </AnimatePresence>
+      )}
+      
+      {/* Add CSS animation keyframes */}
       <style jsx global>{`
-        @keyframes pulse-outline {
-          0% { outline-color: rgba(59, 130, 246, 0.5); }
-          50% { outline-color: rgba(59, 130, 246, 0.9); }
-          100% { outline-color: rgba(59, 130, 246, 0.5); }
+        @keyframes fade-in {
+          from { opacity: 0; }
+          to { opacity: 1; }
         }
         
-        .pulse-outline {
-          animation: pulse-outline 0.8s infinite;
-          outline-width: 3px !important;
+        @keyframes slide-up {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+        
+        @keyframes scale-in {
+          from { transform: scale(0.8); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        
+        .modal-open {
+          animation: fade-in 400ms forwards cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        
+        .modal-close {
+          animation: fade-in 400ms forwards cubic-bezier(0.16, 1, 0.3, 1) reverse;
+        }
+        
+        /* Disable animations for users who prefer reduced motion */
+        @media (prefers-reduced-motion: reduce) {
+          * {
+            animation-duration: 0.01ms !important;
+            transition-duration: 0.01ms !important;
+          }
         }
       `}</style>
     </div>

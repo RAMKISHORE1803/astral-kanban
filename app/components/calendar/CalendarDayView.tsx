@@ -47,6 +47,9 @@ const CalendarDayView = ({
   
   // Ref to store the current date to detect changes
   const prevDateRef = useRef(currentDate);
+
+  // Reference to content area for scrolling
+  const contentRef = useRef<HTMLDivElement>(null);
   
   // Effect to handle date changes
   useEffect(() => {
@@ -106,7 +109,7 @@ const CalendarDayView = ({
   const formattedDate = format(currentDate, "yyyy-MM-dd");
   
   return (
-    <div className="relative h-full overflow-hidden" ref={containerRef}>
+    <div className="relative h-full overflow-hidden flex flex-col" ref={containerRef}>
       {/* Edge indicators - simplified */}
       {customDragState.isDragging && (
         <>
@@ -149,18 +152,27 @@ const CalendarDayView = ({
         </div>
       )}
 
-      {/* Main content container */}
-      <div className={cn(
-        "p-4 overflow-y-auto h-full calendar-day-view-content", // Added calendar-day-view-content class for targeting drop animations
-        isEdgeHovering && "opacity-80", // Simple visual feedback when edge hovering
-        customDragState.isDragging && "touch-none" // Prevent touch actions during drag
-      )}>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">
+      {/* Day header - fixed at top */}
+      <div className="px-4 pt-4 pb-3 border-b border-slate-200 bg-white sticky top-0 z-10">
+        <h3 className="text-lg font-medium text-gray-900">
           {format(currentDate, "EEEE, MMMM d, yyyy")}
         </h3>
+      </div>
 
+      {/* Main content container - scrollable */}
+      <div 
+        ref={contentRef}
+        className={cn(
+          "px-4 py-4 overflow-y-auto flex-1 calendar-day-view-content",
+          isEdgeHovering && "opacity-80" // Simple visual feedback when edge hovering
+        )}
+        style={{
+          overscrollBehavior: 'contain', // Prevent pull-to-refresh on iOS
+          touchAction: customDragState.isDragging ? 'none' : 'pan-y', // Allow vertical scrolling only when not dragging
+        }}
+      >
         {dayEvents.length === 0 ? (
-          <div className="flex items-center justify-center flex-1 text-gray-400">
+          <div className="flex items-center justify-center h-32 text-gray-400">
             No events for this day
           </div>
         ) : (
@@ -185,8 +197,11 @@ const CalendarDayView = ({
                   isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
                   isDropTarget={customDragState.dropTargetId === event.id}
                   onClick={() => onEventClick(event)}
-                  onMouseDown={(e) => onEventMouseDown(event, e)}
-                  onTouchStart={(e) => onEventMouseDown(event, e)}
+                  onMouseDown={(e) => handlePointerDown(event, e)}
+                  onTouchStart={(e) => handlePointerDown(event, e)}
+                  onMouseUp={() => handlePointerUp(event)}
+                  onTouchEnd={() => handlePointerUp(event)}
+                  onMouseLeave={handlePointerLeave}
                 />
               </div>
             ))}
@@ -195,7 +210,7 @@ const CalendarDayView = ({
             {customDragState.isDragging && (
               <div 
                 className={cn(
-                  "absolute left-0 right-0 bottom-0 h-10 bg-transparent",
+                  "h-20 mt-2 bg-transparent",
                   // Highlight when hovering over the bottom area with no specific target
                   customDragState.isDragging && 
                   !customDragState.dropTargetId && 
@@ -205,6 +220,9 @@ const CalendarDayView = ({
                 data-drop-zone="bottom"
               />
             )}
+            
+            {/* Extra padding at the bottom for comfortable scrolling */}
+            <div className="h-10"></div>
           </div>
         )}
       </div>

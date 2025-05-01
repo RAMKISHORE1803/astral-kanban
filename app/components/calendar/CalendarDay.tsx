@@ -12,6 +12,8 @@ export interface CalendarDayProps {
   isToday: boolean;
   isHighlighted: boolean;
   events: KanbanEvent[];
+  isDragging?: boolean;
+  isDragSource?: boolean;
   onEventMouseDown: (event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => void;
   onEventClick: (event: KanbanEvent) => void;
 }
@@ -22,47 +24,57 @@ export const CalendarDay = ({
   isToday,
   isHighlighted,
   events,
+  isDragging,
+  isDragSource,
   onEventMouseDown,
   onEventClick
 }: CalendarDayProps) => {
+  const dayName = format(day, "EEE");
+  const dayNumber = format(day, "d");
+  
   return (
-    <div className={cn(
-      "flex flex-col bg-white border-r border-b border-slate-200 transition-colors",
-      isHighlighted && "bg-blue-50/30"
-    )}>
-      <div className={cn(
-        "p-2 pt-1 border-b border-slate-200 text-center text-xs font-medium sticky top-0 z-[1]",
-        "bg-white",
-        isToday ? "text-astral-blue" : "text-slate-600"
-      )}>
-        <span className="uppercase text-[10px]">{format(day, "EEE")}</span>
-        <span className={cn(
-          "block text-xl mt-0.5 rounded-full mx-auto flex items-center justify-center h-7 w-7",
-          isToday && "bg-astral-blue text-white"
+    <div 
+      className={cn(
+        "flex flex-col h-full border-r border-b border-slate-200 p-1 relative transition-colors duration-100",
+        isToday ? "bg-blue-50" : "bg-white",
+        isHighlighted && !isDragSource && "bg-blue-50/50",
+        isDragSource && "bg-blue-100/70",
+      )}
+      data-date={dateStr}
+    >
+      <div className="text-center py-2">
+        <div className="text-xs text-slate-500 font-medium">{dayName}</div>
+        <div className={cn(
+          "inline-flex items-center justify-center w-7 h-7 rounded-full mt-1 text-sm",
+          isToday && "bg-blue-500 text-white font-medium"
         )}>
-          {format(day, "d")}
-        </span>
+          {dayNumber}
+        </div>
       </div>
-      <div className="p-1 overflow-y-auto space-y-0 bg-white max-h-[85vh]">
+      
+      <div className={cn(
+        "flex-1 overflow-auto space-y-1 py-1 relative",
+        isDragging && "pointer-events-none" // Disable event interactions during drag
+      )}>
         {events.map(event => (
-          <div
-            key={event.id}
-            onMouseDown={(e) => onEventMouseDown(event, e)}
-            onTouchStart={(e) => onEventMouseDown(event, e)}
-            className="cursor-grab active:cursor-grabbing event-card mb-1" // Added mb-1
+          <div 
+            key={event.id} 
+            className={cn(
+              "event-item event-card",
+              isDragging && !isDragSource && "opacity-70"
+            )}
             data-event-id={event.id}
           >
             <EventCard
               event={event}
-              onClick={() => onEventClick(event)}
+              onClick={() => !isDragging && onEventClick(event)}
+              onMouseDown={(e) => onEventMouseDown(event, e)}
+              onTouchStart={(e) => onEventMouseDown(event, e)}
+              isSource={isDragSource && event.date === dateStr}
+              isDraggable={true}
             />
           </div>
         ))}
-        {events.length === 0 && (
-          <div className="text-center text-xs text-slate-400 h-full min-h-[100px] flex items-center justify-center">
-            <span className="text-slate-300">&middot;</span>
-          </div>
-        )}
       </div>
     </div>
   );

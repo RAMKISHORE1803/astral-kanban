@@ -44,26 +44,37 @@ const Header = ({ currentDate, onDateChange, view, onViewChange }: HeaderProps) 
   };
 
   const getDateRangeText = () => {
-    if (isMobile || view === "day") {
-       return format(currentDate, "MMMM d, yyyy");
+    if (isMobile) {
+      return format(currentDate, "MMMM d, yyyy");
+    } else if (view === "day") {
+      // Desktop day view - show full date
+      return format(currentDate, "EEEE, MMMM d, yyyy");
+    } else {
+      // Desktop Week view: Show exact date range with dates
+      const startDate = format(weekStart, "MMM d");
+      const endDate = format(weekEnd, "MMM d");
+      const year = format(currentDate, "yyyy");
+      
+      // If both dates are in the same month
+      if (format(weekStart, "MMM") === format(weekEnd, "MMM")) {
+        return `${startDate} - ${format(weekEnd, "d")}, ${year}`;
+      }
+      
+      // If dates span different months
+      return `${startDate} - ${endDate}, ${year}`;
     }
-    // Desktop Week view: Show Month YYYY or Month - Month YYYY
-    const startMonth = format(weekStart, "MMMM");
-    const endMonth = format(weekEnd, "MMMM");
-    const year = format(currentDate, "yyyy");
-    return startMonth === endMonth ? `${startMonth} ${year}` : `${format(weekStart, "MMM")} - ${format(weekEnd, "MMM")} ${year}`;
   };
 
   // GCal inspired subtle button style
   const iconButtonStyle = "p-1.5 text-slate-600 hover:bg-slate-100 rounded-full transition-colors";
   const textButtonStyle = "px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-100 rounded-astral transition-colors";
-  const todayButtonStyle = cn(textButtonStyle, isSameDay(currentDate, new Date()) && "text-astral-blue font-semibold"); // Highlight if today
+  const todayButtonStyle = cn(textButtonStyle, isSameDay(currentDate, new Date()) && "text-astral-blue font-semibold");
 
   return (
     // Lighter header, border bottom
     <header className="bg-white pt-2 pb-1 px-4 md:px-6 border-b border-slate-200 flex flex-col shrink-0">
       {/* Top Row */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 mb-2">
+      <div className="flex items-center justify-between gap-2 md:gap-4 mb-2">
          {/* Left Section: Logo, Today, Navigation */}
         <div className="flex items-center gap-2 md:gap-3">
           <Logo className="!text-astral-blue !font-semibold"/> {/* Use brand blue */} 
@@ -104,42 +115,6 @@ const Header = ({ currentDate, onDateChange, view, onViewChange }: HeaderProps) 
             >
               {getDateRangeText()}
             </motion.h2>
-        </div>
-        
-        {/* Right Section: Actions (Desktop) */}
-        <div className="hidden md:flex items-center space-x-2 justify-end">
-          {/* View Toggle - Desktop Only */}
-          <div className="bg-slate-100 p-1 rounded-astral flex">
-            <button
-              className={cn(
-                "px-3 py-1 text-sm font-medium rounded-astral transition-all",
-                view === "day"
-                  ? "bg-white text-astral-blue shadow-sm"
-                  : "text-slate-600 hover:bg-white/60"
-              )}
-              onClick={() => onViewChange("day")}
-            >
-              Day
-            </button>
-            <button
-              className={cn(
-                "px-3 py-1 text-sm font-medium rounded-astral transition-all",
-                view === "week"
-                  ? "bg-white text-astral-blue shadow-sm"
-                  : "text-slate-600 hover:bg-white/60"
-              )}
-              onClick={() => onViewChange("week")}
-            >
-              Week
-            </button>
-          </div>
-          {/* Add Event Button - Simplified */}
-          <Button
-            className="bg-astral-yellow text-slate-800 shadow-sm hover:shadow-md flex items-center gap-1.5 px-3 py-1.5 text-sm"
-            onClick={() => { /* Add event TBD */ }}
-          >
-            <CalendarPlus size={16} /> Create
-          </Button>
         </div>
       </div>
 

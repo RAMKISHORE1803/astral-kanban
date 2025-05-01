@@ -28,3 +28,93 @@
   }
 }
 
+/* Drag and drop specific styles */
+body.calendar-dragging {
+  cursor: grabbing !important;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body.calendar-dragging * {
+  cursor: grabbing !important;
+}
+
+#global-drag-overlay {
+  pointer-events: none;
+  z-index: 9999;
+  will-change: transform;
+  transition: none;
+}
+
+.pulse-outline {
+  animation: pulse-border 1s ease-out forwards;
+}
+
+@keyframes pulse-border {
+  0% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.5); }
+  70% { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+
+/* Styles for event cards */
+.event-card {
+  touch-action: none;
+  transform: translate3d(0,0,0);
+  backface-visibility: hidden;
+}
+
+.event-card.dragging {
+  opacity: 0.5;
+}
+
+/* Drop indicators */
+.drop-indicator {
+  position: absolute;
+  height: 3px;
+  background-color: #3b82f6;
+  width: 100%;
+  left: 0;
+  z-index: 5;
+  animation: pulse-width 1.5s infinite;
+}
+
+@keyframes pulse-width {
+  0% { opacity: 0.7; }
+  50% { opacity: 1; }
+  100% { opacity: 0.7; }
+}
+
+/* Custom scrollbar styles */
+.calendar-week-view .overflow-y-auto::-webkit-scrollbar {
+  width: 5px;
+}
+
+.calendar-week-view .overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.calendar-week-view .overflow-y-auto::-webkit-scrollbar-thumb {
+  background-color: rgba(203, 213, 225, 0.5);
+  border-radius: 20px;
+}
+
+.calendar-week-view .overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(148, 163, 184, 0.7);
+}
+
+/* Only show scrollbar on hover */
+.calendar-week-view .overflow-y-auto::-webkit-scrollbar {
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.calendar-week-view .overflow-y-auto:hover::-webkit-scrollbar {
+  opacity: 1;
+}
+
+/* Firefox scrollbar */
+.calendar-week-view .overflow-y-auto {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(203, 213, 225, 0.5) transparent;
+}
+

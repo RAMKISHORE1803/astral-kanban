@@ -1,8 +1,6 @@
 "use client";
 
 import React from 'react';
-import { useSortable } from "@dnd-kit/sortable";
-import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
 import { KanbanEvent } from "@/app/lib/utils";
 import { cn } from "@/app/lib/utils";
@@ -15,7 +13,11 @@ export interface EventCardProps {
   isDropTarget?: boolean;
   onClick: (event: KanbanEvent) => void;
   onMouseDown?: (e: React.MouseEvent) => void;
+  onMouseUp?: (e: React.MouseEvent) => void;
+  onMouseLeave?: () => void;
   onTouchStart?: (e: React.TouchEvent) => void;
+  onTouchMove?: (e: React.TouchEvent) => void;
+  onTouchEnd?: () => void;
 }
 
 // Simple hash function for color generation
@@ -48,55 +50,38 @@ const EventCard: React.FC<EventCardProps> = ({
   isDropTarget = false,
   onClick,
   onMouseDown,
-  onTouchStart
+  onMouseUp,
+  onMouseLeave,
+  onTouchStart,
+  onTouchMove,
+  onTouchEnd
 }) => {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: event.id, disabled: false });
-
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    // Use instant transition while dragging, but smooth reposition otherwise
-    transition: isDragging
-      ? transition
-      : 'transform 200ms ease-out, opacity 200ms ease-out',
-    opacity: isDragging ? 0.8 : 1,
-    touchAction: isDraggable ? 'none' : 'auto',
-    ...(isDragging ? { zIndex: 10 } : {}),
-  };
-
   const colorIndex = simpleHash(event.id) % eventColors.length;
   const colorSet = eventColors[colorIndex];
 
   return (
     <motion.div
-      ref={setNodeRef}
-      style={style}
-      {...attributes}
-      {...listeners}
       className={cn(
         "relative z-0 group bg-white rounded-lg overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-2 hover:z-10",
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
-        isDragging && "shadow-lg ring-2 ring-blue-400 rotate-1 scale-[1.02]",
         isSource && !isDropTarget && "opacity-40"
       )}
       data-event-id={event.id}
       onClick={(e) => {
-        // Prevent drag from interfering with click
-        if (!isDragging) {
-          onClick(event);
-        }
+        onClick(event);
       }}
       onMouseDown={onMouseDown}
+      onMouseUp={onMouseUp}
+      onMouseLeave={onMouseLeave}
       onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
       whileHover={{ y: -2 }}
+      style={{
+        touchAction: isDraggable ? 'none' : 'auto',
+      }}
     >
       {/* Image Section - Full width, consistent height */}
       {event.imageUrl && (
