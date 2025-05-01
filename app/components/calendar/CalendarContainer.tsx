@@ -11,6 +11,7 @@ import { useMediaQuery } from "@/app/lib/hooks/useMediaQuery";
 import { cn } from "@/app/lib/utils";
 import CalendarDayView from "./CalendarDayView";
 import CalendarWeekView from "./CalendarWeekView";
+import { flushSync } from "react-dom";
 
 // Helper to get sample content randomly
 const sampleTitles = Object.values(sampleEventsContent).flat().map(e => e.title);
@@ -21,29 +22,168 @@ const getRandomElement = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr
 // Constants for edge detection
 const EDGE_ZONE_WIDTH_PERCENTAGE = 0.2; // 20% of screen width for edge detection
 const TRANSITION_COOLDOWN = 300; // ms to wait before allowing another transition
+const CONTINUOUS_EDGE_COOLDOWN = 500; // Stricter cooldown for continuous edge detection
 
-// Add a global state to ensure drag tracking always works
+// Modified global state to improve synchronization with React
 let globalDragTracking = {
   activeOverlay: null as HTMLDivElement | null,
   isTracking: false,
   currentPosition: { x: 0, y: 0 },
   animationFrame: null as number | null,
-  offsetX: 150, // Half card width
-  offsetY: 30,  // Small offset for visibility
+  offsetX: 0, // No offset for perfect finger tracking
+  offsetY: 0,  // No offset for perfect finger tracking
+  targetElement: null as HTMLElement | null, // Target element to snap back to
+  synchronizingWithReact: false, // Flag to indicate a React state update is in progress
+  dropPending: false, // Flag to indicate we're waiting for React to update before finalizing drop
+  lastDetectedColumn: null as string | null, // Store the last detected column date
+  inTransition: false, // Flag to prevent edge detection during transitions
+  edgeDetectionEnabled: true, // Flag to control edge detection
+  lastEdgeDetectionTime: 0, // Time when edge detection was last triggered
+  activeHoldTimer: null as NodeJS.Timeout | null, // Timer for validating active edge holding
+  firstEdgeEntryTime: 0, // Time when user first entered the edge zone
+  hasBeenAtEdge: false, // Flag indicating if user has been continuously at the edge
 };
 
-// Overlay update function that works independently of React's lifecycle
+// Improved overlay update function that coordinates with React state
 function updateGlobalOverlayPosition() {
   if (!globalDragTracking.activeOverlay || !globalDragTracking.isTracking) return;
   
   const { x, y } = globalDragTracking.currentPosition;
   
-  // Apply position with transform for better performance
-  globalDragTracking.activeOverlay.style.transform = 
-    `translate3d(${x - globalDragTracking.offsetX}px, ${y - globalDragTracking.offsetY}px, 0)`;
+  // Apply position with transform for better performance - center under finger
+  if (globalDragTracking.activeOverlay) {
+    const cardElement = globalDragTracking.activeOverlay.querySelector('div');
+    if (cardElement) {
+      const cardWidth = cardElement.offsetWidth;
+      const cardHeight = cardElement.offsetHeight;
+      
+      // Position so finger is at center of card
+      globalDragTracking.activeOverlay.style.transform = 
+        `translate3d(${x - (cardWidth / 2)}px, ${y - (cardHeight / 2)}px, 0)`;
+    }
+  }
+
+  // Continuously check for edge detection - but with controlled timing
+  if (globalDragTracking.isTracking && 
+      !globalDragTracking.inTransition && 
+      globalDragTracking.edgeDetectionEnabled) {
+    // Get container bounds for edge detection
+    const container = document.querySelector('.calendar-container');
+    if (container) {
+      const containerRect = container.getBoundingClientRect();
+      const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
+      
+      const now = Date.now();
+      const atLeftEdge = x < containerRect.left + edgeWidth;
+      const atRightEdge = x > containerRect.right - edgeWidth;
+      const atEdge = atLeftEdge || atRightEdge;
+      
+      // Check if we're at an edge
+      if (atEdge) {
+        // If this is the first time at the edge, record the time
+        if (!globalDragTracking.hasBeenAtEdge) {
+          globalDragTracking.firstEdgeEntryTime = now;
+          globalDragTracking.hasBeenAtEdge = true;
+          
+          // Set up an active hold timer to validate if the user is actively holding
+          if (globalDragTracking.activeHoldTimer) {
+            clearTimeout(globalDragTracking.activeHoldTimer);
+          }
+          
+          globalDragTracking.activeHoldTimer = setTimeout(() => {
+            // User has been actively holding at the edge, now we can trigger
+            const edgeDirection = atLeftEdge ? 'left' : 'right';
+            if (now - globalDragTracking.lastEdgeDetectionTime > CONTINUOUS_EDGE_COOLDOWN) {
+              globalDragTracking.lastEdgeDetectionTime = now;
+              document.dispatchEvent(new CustomEvent('edgeDetected', { 
+                detail: { 
+                  edge: edgeDirection,
+                  activeHold: true
+                } 
+              }));
+            }
+          }, 100);
+        }
+        // For subsequent frames while at the edge
+        else if (now - globalDragTracking.firstEdgeEntryTime > 200) {
+          // Only trigger after being at edge for a minimum time AND respecting cooldown
+          if (now - globalDragTracking.lastEdgeDetectionTime > CONTINUOUS_EDGE_COOLDOWN) {
+            globalDragTracking.lastEdgeDetectionTime = now;
+            const edgeDirection = atLeftEdge ? 'left' : 'right';
+            document.dispatchEvent(new CustomEvent('edgeDetected', { 
+              detail: { 
+                edge: edgeDirection,
+                activeHold: true
+              } 
+            }));
+          }
+        }
+      } else {
+        // Reset edge tracking when not at edge
+        globalDragTracking.hasBeenAtEdge = false;
+        if (globalDragTracking.activeHoldTimer) {
+          clearTimeout(globalDragTracking.activeHoldTimer);
+          globalDragTracking.activeHoldTimer = null;
+        }
+      }
+    }
+  }
 
   // Continue the animation loop
   globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
+}
+
+// Improved snap animation with better coordination
+function snapToPosition(targetX: number, targetY: number, onComplete: () => void) {
+  if (!globalDragTracking.activeOverlay) return onComplete();
+  
+  // Calculate starting position
+  const cardElement = globalDragTracking.activeOverlay.querySelector('div');
+  if (!cardElement) return onComplete();
+  
+  const cardWidth = cardElement.offsetWidth;
+  const cardHeight = cardElement.offsetHeight;
+  
+  const startX = globalDragTracking.currentPosition.x - (cardWidth / 2);
+  const startY = globalDragTracking.currentPosition.y - (cardHeight / 2);
+  
+  const startTime = performance.now();
+  const duration = 300; // ms
+  
+  // Use a spring-like animation for natural feel
+  const animate = (currentTime: number) => {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / duration, 1);
+    
+    // Cubic bezier easing for Android-like feel
+    const easing = (t: number) => {
+      return t < 0.5
+        ? 4 * t * t * t
+        : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1;
+    };
+    
+    const easedProgress = easing(progress);
+    
+    const currentX = startX + (targetX - startX) * easedProgress;
+    const currentY = startY + (targetY - startY) * easedProgress;
+    
+    if (globalDragTracking.activeOverlay) {
+      globalDragTracking.activeOverlay.style.transform = `translate3d(${currentX}px, ${currentY}px, 0)`;
+    }
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Ensure we're positioned exactly at the target
+      if (globalDragTracking.activeOverlay) {
+        globalDragTracking.activeOverlay.style.transform = `translate3d(${targetX}px, ${targetY}px, 0)`;
+      }
+      onComplete();
+    }
+  };
+  
+  globalDragTracking.activeOverlay.style.transition = 'none';
+  requestAnimationFrame(animate);
 }
 
 interface CalendarContainerProps {
@@ -96,7 +236,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   
   // Forward declaration refs to solve circular dependencies
   const updateDragPositionRef = useRef<(clientX: number, clientY: number) => void>();
-  const triggerDateChangeRef = useRef<(direction: 'left' | 'right') => void>();
+  const triggerDateChangeRef = useRef<(direction: 'left' | 'right', isActiveHold?: boolean) => void>();
   const finalizeCustomDragRef = useRef<() => void>();
   
   // Move computed values to the top
@@ -119,14 +259,16 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   }, [allEvents, currentDate, effectiveView]);
 
   // Group events by date for week view rendering
-  const eventsByDateForWeek = useMemo(() => {
-    if (effectiveView !== "week") return {};
+  const eventsByDateForWeek = useRef<{ [date: string]: KanbanEvent[] }>({});
+  useEffect(() => {
+    if (effectiveView === "week") {
     const grouped: { [date: string]: KanbanEvent[] } = {};
     filteredEvents.forEach(event => {
       if (!grouped[event.date]) { grouped[event.date] = []; }
       grouped[event.date].push(event);
     });
-    return grouped;
+      eventsByDateForWeek.current = grouped;
+    }
   }, [filteredEvents, effectiveView]);
 
   // Initialize draggable overlay as a DOM element outside React - completely isolated
@@ -184,7 +326,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         // Ensure animation frame is running
         if (!globalDragTracking.animationFrame) {
           globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
-    }
+        }
       }
     };
     
@@ -213,15 +355,39 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     };
   }, []);
   
-  // Start dragging an event - using the global overlay system
+  // Enhanced ref for coordinating between React and DOM
+  const reactSyncRef = useRef({
+    lastStateUpdate: 0,
+    targetDateAfterTransition: null as string | null,
+    dropRequested: false,
+    pendingUpdate: false
+  });
+  
+  // Start dragging an event - using the improved global overlay system
   const startCustomDrag = useCallback((event: KanbanEvent, clientX: number, clientY: number) => {
     // Reset day offset counter
     dayOffsetRef.current = 0;
     
     // Reset transition state
     isTransitioningRef.current = false;
+    globalDragTracking.inTransition = false;
     
-    // Update global tracking state
+    // Reset synchronization flags
+    globalDragTracking.synchronizingWithReact = false;
+    globalDragTracking.dropPending = false;
+    globalDragTracking.lastDetectedColumn = event.date;
+    
+    // Reset edge detection state
+    globalDragTracking.edgeDetectionEnabled = true;
+    globalDragTracking.lastEdgeDetectionTime = 0;
+    globalDragTracking.hasBeenAtEdge = false;
+    globalDragTracking.firstEdgeEntryTime = 0;
+    if (globalDragTracking.activeHoldTimer) {
+      clearTimeout(globalDragTracking.activeHoldTimer);
+      globalDragTracking.activeHoldTimer = null;
+    }
+    
+    // Update tracking state
     globalDragTracking.isTracking = true;
     globalDragTracking.currentPosition = { x: clientX, y: clientY };
 
@@ -230,9 +396,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       // Clear any existing content
       globalDragTracking.activeOverlay.innerHTML = '';
       
-      // Create the event card with proper styling - iOS-like appearance
+      // Create the event card with proper styling - Android-like appearance
       const eventCardHtml = `
-        <div class="bg-white rounded-lg border border-slate-200 shadow-lg p-3 w-[300px]">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-lg p-3" style="width: auto; max-width: 320px; transform: scale(1.05); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25); will-change: transform; backface-visibility: hidden;">
           <div class="flex justify-between items-start mb-2">
             <h3 class="font-medium text-slate-800">${event.title}</h3>
             <span class="text-xs text-slate-500">${event.time}</span>
@@ -254,28 +420,30 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       if (originalCard) {
         const originalRect = originalCard.getBoundingClientRect();
         
+        // Save target element for snap-back animation
+        globalDragTracking.targetElement = originalCard as HTMLElement;
+        
         // Position the overlay exactly over the original card first
         globalDragTracking.activeOverlay.style.transform = 
           `translate3d(${originalRect.left}px, ${originalRect.top}px, 0)`;
         
-        // Then animate it to the cursor position with a lift effect
+        // Then animate it to the cursor position with a lift effect - Android style
         setTimeout(() => {
-          // iOS-like lift animation
+          // Android-like lift animation
           if (globalDragTracking.activeOverlay) {
             globalDragTracking.activeOverlay.style.transition = 
-              'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1.0)';
+              'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
             
+            // Calculate position to put finger directly in center of card
             const cardElement = globalDragTracking.activeOverlay.querySelector('div');
             if (cardElement) {
-              cardElement.style.transition = 
-                'transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1.0), box-shadow 0.2s ease';
-              cardElement.style.transform = 'scale(1.05) rotate(1deg)';
-              cardElement.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.2)';
+              const cardWidth = cardElement.offsetWidth;
+              const cardHeight = cardElement.offsetHeight;
+              
+              // Position so finger is at center of card
+              globalDragTracking.activeOverlay.style.transform = 
+                `translate3d(${clientX - (cardWidth / 2)}px, ${clientY - (cardHeight / 2)}px, 0)`;
             }
-            
-            // Move to cursor position
-            globalDragTracking.activeOverlay.style.transform = 
-              `translate3d(${clientX - globalDragTracking.offsetX}px, ${clientY - globalDragTracking.offsetY}px, 0)`;
             
             // After animation completes, start the continuous tracking
             setTimeout(() => {
@@ -288,13 +456,19 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
                 cancelAnimationFrame(globalDragTracking.animationFrame);
               }
               globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
-            }, 200);
+            }, 150);
           }
         }, 0);
-      } else {
+    } else {
         // If we can't find the original, just start at cursor position directly
-        globalDragTracking.activeOverlay.style.transform = 
-          `translate3d(${clientX - globalDragTracking.offsetX}px, ${clientY - globalDragTracking.offsetY}px, 0)`;
+        const cardElement = globalDragTracking.activeOverlay.querySelector('div');
+        if (cardElement) {
+          const cardWidth = cardElement.offsetWidth;
+          const cardHeight = cardElement.offsetHeight;
+          
+          globalDragTracking.activeOverlay.style.transform = 
+            `translate3d(${clientX - (cardWidth / 2)}px, ${clientY - (cardHeight / 2)}px, 0)`;
+        }
         
         // Start animation loop
         if (globalDragTracking.animationFrame) {
@@ -303,9 +477,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
       }
       
-      // Provide haptic feedback for lift
+      // Provide haptic feedback for lift - Android-like
       if (navigator.vibrate) {
-        navigator.vibrate(40);
+        navigator.vibrate([15, 10, 15]); // Android-like pattern
       }
     }
     
@@ -316,7 +490,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       position: { x: clientX, y: clientY },
       startedOn: event.date,
       currentlyHovering: null,
-          dropTargetId: null
+      dropTargetId: null
     });
     
     // Prevent scrolling during drag
@@ -326,19 +500,34 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     // Clear any selected event
     setSelectedEvent(null);
     
-    console.log("Drag started with iOS-like lift animation", clientX, clientY);
+    console.log("Drag started with Android-like lift animation", clientX, clientY);
   }, []);
   
-  // Finalize drag operation - using the global overlay system
+  // Improved finalizeCustomDrag with better position detection after transitions
   const finalizeCustomDrag = useCallback(() => {
     if (!customDragState.isDragging || !customDragState.event) {
       return;
     }
     
-    console.log("Finalizing drag - making it simple and reliable");
+    console.log("Finalizing drag with snap animation");
+    
+    // If we're still in transition, wait a bit
+    if (globalDragTracking.inTransition || isTransitioningRef.current) {
+      console.log("Delaying drop until transition completes");
+      globalDragTracking.dropPending = true;
+      
+      setTimeout(() => {
+        if (globalDragTracking.dropPending) {
+          console.log("Completing delayed drop");
+          finalizeCustomDrag();
+        }
+      }, 150);
+      return;
+    }
     
     // Stop global tracking
     globalDragTracking.isTracking = false;
+    globalDragTracking.dropPending = false;
     
     // Stop animation frame
     if (globalDragTracking.animationFrame) {
@@ -346,248 +535,28 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       globalDragTracking.animationFrame = null;
     }
     
-    // Default target date based on current date
-    const defaultTargetDateStr = format(currentDate, "yyyy-MM-dd");
-    let targetDateStr = defaultTargetDateStr;
-    const droppedEvent = customDragState.event;
-    
-    // SIMPLIFIED: Always update the event's date to the current day regardless of animation
-    if (droppedEvent) {
-      // Find the proper insertion position based on where mouse/finger is
-      let insertAt = -1;
-      if (customDragState.position) {
-        const { x, y } = customDragState.position;
-        
-        // Use document.elementsFromPoint to find what we're hovering over
-        const elementsAtPoint = document.elementsFromPoint(x, y);
-        
-        // Find the column we're dropping in
-        const columnElement = elementsAtPoint.find(el => 
-          el.hasAttribute('data-date') || el.closest('[data-date]')
-        );
-        
-        if (columnElement) {
-          const dateAttr = columnElement.getAttribute('data-date') || 
-                          columnElement.closest('[data-date]')?.getAttribute('data-date');
-          
-          if (dateAttr) {
-            // THIS IS THE FIX: Actually use the column date instead of currentDate
-            targetDateStr = dateAttr;
-            console.log(`Detected drop in column with date: ${targetDateStr}`);
-          }
-        }
-        
-        // Find the event card we might be hovering over for insert position
-        const eventCardElement = elementsAtPoint.find(el => 
-          el.classList.contains('event-card') || el.closest('.event-card')
-        );
-        
-        if (eventCardElement) {
-          const eventCard = eventCardElement.classList.contains('event-card') 
-            ? eventCardElement 
-            : eventCardElement.closest('.event-card');
-          
-          const targetEventId = eventCard?.getAttribute('data-event-id');
-          
-          // Find the index of this event in the array
-          if (targetEventId) {
-            const eventsInColumn = allEvents.filter(e => e.date === targetDateStr);
-            const targetIndex = eventsInColumn.findIndex(e => e.id === targetEventId);
-            if (targetIndex !== -1) {
-              insertAt = targetIndex;
-            }
-          }
-        }
-      }
-      
-      console.log(`Moving event "${droppedEvent.title}" to ${targetDateStr}`);
-      
-      setAllEvents(prev => {
-        // Create a copy of events without the dragged one
-        const eventsWithoutDragged = prev.filter(e => e.id !== droppedEvent.id);
-        
-        // Create the updated event with the new date
-        const updatedEvent = {
-          ...droppedEvent,
-          date: targetDateStr
-        };
-        
-        // Get events for the target date
-        const dateEvents = eventsWithoutDragged.filter(e => e.date === targetDateStr);
-        
-        if (insertAt === -1) {
-          // Add at end if no specific position
-          return [...eventsWithoutDragged, updatedEvent];
-            } else {
-          // Insert at specified position within the same date events
-          const newDateEvents = [...dateEvents];
-          newDateEvents.splice(insertAt, 0, updatedEvent);
-          
-          // Replace date events in the full list
-          return [
-            ...eventsWithoutDragged.filter(e => e.date !== targetDateStr),
-            ...newDateEvents
-          ];
-            }
-          });
-        }
-    
-    // Only now, handle the visual animation
-    if (globalDragTracking.activeOverlay) {
-      // Just fade out at current position
-      globalDragTracking.activeOverlay.style.transition = 'opacity 0.3s ease';
-      globalDragTracking.activeOverlay.style.opacity = '0';
-      
-      // Provide haptic feedback
-      if (navigator.vibrate) {
-        navigator.vibrate(40);
-      }
-      
-      // Hide after animation
-      setTimeout(() => {
-        if (globalDragTracking.activeOverlay) {
-          globalDragTracking.activeOverlay.style.display = 'none';
-          globalDragTracking.activeOverlay.style.transition = '';
-          globalDragTracking.activeOverlay.style.opacity = '1';
-        }
-      }, 300);
-    }
-    
-    // Reset drag state
-    setCustomDragState({
-      isDragging: false,
-      event: null,
-      position: null,
-      startedOn: null,
-      currentlyHovering: null,
-      dropTargetId: null
-    });
-    
-    // Reset other state
-    isTransitioningRef.current = false;
-    
-    // Clear any timers
-    if (edgeTransitionTimerRef.current) {
-      clearTimeout(edgeTransitionTimerRef.current);
-      edgeTransitionTimerRef.current = null;
-    }
-    
-    // Re-enable scrolling
-    document.body.style.overflow = '';
-    document.body.classList.remove('calendar-dragging');
-  }, [customDragState, currentDate, allEvents]);
-  
-  // Update the triggerDateChange function to properly reset state after transitions
-  const triggerDateChange = useCallback((direction: 'left' | 'right') => {
-    // Apply a cooldown to prevent rapid transitions
-    const now = Date.now();
-    if (now - lastTransitionTimeRef.current < TRANSITION_COOLDOWN) {
-      return;
-    }
-    
-    // Mark we're transitioning and update the last transition time
-    isTransitioningRef.current = true;
-    lastTransitionTimeRef.current = now;
-    
-    // Visual indicator of transition in the overlay
-    if (customDragState.isDragging && globalDragTracking.activeOverlay) {
-      const cardElement = globalDragTracking.activeOverlay.querySelector('div');
-      if (cardElement) {
-        // Add a visual effect for transition
-        cardElement.classList.add('pulse-outline');
-        cardElement.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.25)';
-      }
-    }
-    
-    // Calculate new date
-    const newDate = direction === 'left' ? subDays(currentDate, 1) : addDays(currentDate, 1);
-    
-    // Update day offset counter
-    dayOffsetRef.current += direction === 'left' ? -1 : 1;
-    
-    // Haptic feedback
-    if (navigator.vibrate) {
-      navigator.vibrate(50);
-    }
-    
-    // Update the event's date in drag state
-    if (customDragState.isDragging && customDragState.event) {
-      const updatedEvent = {
-        ...customDragState.event,
-        date: format(newDate, "yyyy-MM-dd")
-      };
-      
-      setCustomDragState(prev => ({
-        ...prev,
-        event: updatedEvent,
-        // Reset hover state for clean detection on the new day
-        currentlyHovering: null,
-        // Keep the position intact
-        dropTargetId: null
-      }));
-    }
-    
-    // Create a subtle "page flip" effect
-    const pageFlipEffect = document.createElement('div');
-    pageFlipEffect.className = 
-      `fixed inset-0 pointer-events-none z-[9000] ${direction === 'left' ? 'bg-gradient-to-r' : 'bg-gradient-to-l'} from-blue-500/10 to-transparent`;
-    document.body.appendChild(pageFlipEffect);
-    
-    // Remove the effect after the transition
-    setTimeout(() => {
-      pageFlipEffect.style.opacity = '0';
-      pageFlipEffect.style.transition = 'opacity 0.3s ease';
-      setTimeout(() => {
-        document.body.removeChild(pageFlipEffect);
-      }, 300);
-    }, 100);
-    
-    // Log and change date
-    console.log(`Transitioning to ${format(newDate, 'yyyy-MM-dd')}`);
-    onDateChange(newDate);
-    
-    // After a delay to allow React rendering, reset the transition state and re-enable edge detection
-    setTimeout(() => {
-      isTransitioningRef.current = false;
-      
-      // Remove transition visual indicator
-      if (globalDragTracking.activeOverlay) {
-        const cardElement = globalDragTracking.activeOverlay.querySelector('div');
-        if (cardElement) {
-          cardElement.classList.remove('pulse-outline');
-          cardElement.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.15)';
-        }
-      }
-      
-      // This is critical - force a re-evaluation of edge tracking after transition completes
-      console.log("Transition complete - re-enabling edge detection");
-    }, 100); // Slightly longer delay to ensure the new view is fully rendered
-  }, [currentDate, onDateChange, customDragState.isDragging, customDragState.event]);
-  
-  // Add a forceDrop function
-  const forceDrop = useCallback(() => {
-    console.log("FORCE DROP CALLED");
-    
-    // Prevent multiple calls
-    if (!customDragState.isDragging || !customDragState.event) {
-      console.log("Force drop called but not dragging or no event");
-      return;
-    }
+    // Get current date string - this is crucial for after-transition drops
+    const currentDateStr = format(currentDate, "yyyy-MM-dd");
     
     // Default target date based on current date
-    const defaultTargetDateStr = format(currentDate, "yyyy-MM-dd");
-    let targetDateStr = defaultTargetDateStr;
+    let targetDateStr = currentDateStr;
+    
+    // If we have a cached column detection, use that (from edge transitions)
+    if (globalDragTracking.lastDetectedColumn) {
+      targetDateStr = globalDragTracking.lastDetectedColumn;
+    }
+    
     const droppedEvent = customDragState.event;
+    let insertAt = -1;
     
     // Find the proper insertion position based on where mouse/finger is
-    let insertAt = -1;
-    if (customDragState.position) {
+    if (droppedEvent && customDragState.position) {
       const { x, y } = customDragState.position;
       
-      // Use document.elementsFromPoint to find what we're hovering over
+      // Get elements at current position - crucial for after-transition drops
       const elementsAtPoint = document.elementsFromPoint(x, y);
       
-      // Find the column we're dropping in
+      // Find the column we're dropping in - critical fix for post-transition
       const columnElement = elementsAtPoint.find(el => 
         el.hasAttribute('data-date') || el.closest('[data-date]')
       );
@@ -597,13 +566,13 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
                         columnElement.closest('[data-date]')?.getAttribute('data-date');
         
         if (dateAttr) {
-          // THIS IS THE FIX: Actually use the column date instead of currentDate
+          // THIS IS THE CRITICAL FIX: Update the target date to the actual column we're over
           targetDateStr = dateAttr;
-          console.log(`Force drop: Detected column with date: ${targetDateStr}`);
+          console.log(`Detected drop in column with date: ${targetDateStr}`);
         }
       }
       
-      // Find the event card we might be hovering over for insert position
+      // Find event card for position
       const eventCardElement = elementsAtPoint.find(el => 
         el.classList.contains('event-card') || el.closest('.event-card')
       );
@@ -626,14 +595,18 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       }
     }
     
-    console.log(`Force drop: Moving event "${droppedEvent.title}" to ${targetDateStr}`);
+    console.log(`Moving event "${droppedEvent.title}" to ${targetDateStr}`);
     
-    // Update the data model immediately
-    setAllEvents(prev => {
-      // Remove the dragged event
-      const eventsWithoutDragged = prev.filter(e => e.id !== droppedEvent.id);
+    // Mark that we're synchronizing with React
+    globalDragTracking.synchronizingWithReact = true;
+    reactSyncRef.current.lastStateUpdate = Date.now();
+    
+    // Use flushSync to update state synchronously
+    flushSync(() => {
+      // Create a copy of events without the dragged one
+      const eventsWithoutDragged = allEvents.filter(e => e.id !== droppedEvent.id);
       
-      // Create updated event with target date
+      // Create the updated event with the new date
       const updatedEvent = {
         ...droppedEvent,
         date: targetDateStr
@@ -644,193 +617,361 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       
       if (insertAt === -1) {
         // Add at end if no specific position
-        return [...eventsWithoutDragged, updatedEvent];
+        setAllEvents([...eventsWithoutDragged, updatedEvent]);
       } else {
         // Insert at specified position within the same date events
         const newDateEvents = [...dateEvents];
         newDateEvents.splice(insertAt, 0, updatedEvent);
         
         // Replace date events in the full list
-        return [
+        setAllEvents([
           ...eventsWithoutDragged.filter(e => e.date !== targetDateStr),
           ...newDateEvents
-        ];
+        ]);
       }
+      
+      // Also reset React drag state within flushSync
+      setCustomDragState({
+        isDragging: false,
+        event: null,
+        position: null,
+        startedOn: null,
+        currentlyHovering: null,
+        dropTargetId: null
+      });
     });
     
-    // Hide the overlay immediately
-    if (globalDragTracking.activeOverlay) {
-      globalDragTracking.activeOverlay.style.display = 'none';
-    }
-    
-    // Cancel any animation frame
-    if (globalDragTracking.animationFrame) {
-      cancelAnimationFrame(globalDragTracking.animationFrame);
-      globalDragTracking.animationFrame = null;
-    }
-    
-    // Reset all state flags
-    globalDragTracking.isTracking = false;
-    isTransitioningRef.current = false;
-    
-    // Clear all timers
-    if (edgeTransitionTimerRef.current) {
-      clearTimeout(edgeTransitionTimerRef.current);
-      edgeTransitionTimerRef.current = null;
-    }
-    
-    // Reset drag state
-    setCustomDragState({
-      isDragging: false,
-      event: null,
-      position: null,
-      startedOn: null,
-      currentlyHovering: null,
-      dropTargetId: null
+    // After flushSync, schedule the DOM query and animation start in the next frame
+    requestAnimationFrame(() => {
+      console.log("Querying DOM after flushSync and rAF");
+      
+      // Find the new position of the event card after data update
+      const newCardElement = document.querySelector(`[data-event-id="${droppedEvent.id}"]`);
+      
+      if (newCardElement && globalDragTracking.activeOverlay) {
+        const targetRect = newCardElement.getBoundingClientRect();
+        
+        console.log("Found target position:", targetRect.left, targetRect.top);
+        
+        // Android-like snap animation to final position
+        snapToPosition(targetRect.left, targetRect.top, () => {
+          // Hide after animation
+          if (globalDragTracking.activeOverlay) {
+            globalDragTracking.activeOverlay.style.display = 'none';
+          }
+          
+          // Provide haptic feedback for drop
+          if (navigator.vibrate) {
+            navigator.vibrate(10);
+          }
+          
+          // Clear synchronization flag
+          globalDragTracking.synchronizingWithReact = false;
+        });
+        
+        // Highlight the destination briefly to enhance feedback
+        newCardElement.classList.add('pulse-highlight');
+        setTimeout(() => {
+          newCardElement.classList.remove('pulse-highlight');
+        }, 500);
+      } else {
+        console.log("Target element not found for animation, using fallback");
+        
+        // Fallback if we can't find the target - just fade out
+        if (globalDragTracking.activeOverlay) {
+          globalDragTracking.activeOverlay.style.transition = 'opacity 0.3s ease';
+          globalDragTracking.activeOverlay.style.opacity = '0';
+          
+          // Hide after animation
+          setTimeout(() => {
+            if (globalDragTracking.activeOverlay) {
+              globalDragTracking.activeOverlay.style.display = 'none';
+              globalDragTracking.activeOverlay.style.transition = '';
+              globalDragTracking.activeOverlay.style.opacity = '1';
+            }
+            
+            // Clear synchronization flag
+            globalDragTracking.synchronizingWithReact = false;
+          }, 300);
+        }
+      }
+      
+      // Reset other state after starting animation
+      isTransitioningRef.current = false;
+      globalDragTracking.inTransition = false;
+      
+      // Clear any timers
+      if (edgeTransitionTimerRef.current) {
+        clearTimeout(edgeTransitionTimerRef.current);
+        edgeTransitionTimerRef.current = null;
+      }
+      
+      // Re-enable scrolling
+      document.body.style.overflow = '';
+      document.body.classList.remove('calendar-dragging');
     });
-    
-    // Re-enable scrolling
-    document.body.style.overflow = '';
-    document.body.classList.remove('calendar-dragging');
-    
-    console.log("Force drop completed");
   }, [customDragState, currentDate, allEvents]);
   
-  // Update the global event listener effect to use capture phase and forceDrop
-  useEffect(() => {
-    if (!customDragState.isDragging) return;
+  // Improved triggerDateChange with better state resetting and controlled transitions
+  const triggerDateChange = useCallback((direction: 'left' | 'right', isActiveHold?: boolean) => {
+    // Don't trigger if we're already in a transition
+    if (isTransitioningRef.current || globalDragTracking.inTransition) {
+      return;
+    }
     
-    console.log("Setting up global event handlers for drag");
+    // Apply a cooldown to prevent rapid transitions
+    const now = Date.now();
+    const cooldownTime = isActiveHold ? CONTINUOUS_EDGE_COOLDOWN : TRANSITION_COOLDOWN;
     
-    // Touch and mouse handlers with improved mobile handling
-    const handleMove = (e: MouseEvent | TouchEvent) => {
-      // Always prevent default for touch to avoid scrolling during drag
-      if ('touches' in e) {
-        e.preventDefault();
+    if (now - lastTransitionTimeRef.current < cooldownTime) {
+      return;
+    }
+    
+    console.log(`Triggering date change to ${direction}${isActiveHold ? ' (active hold)' : ''}`);
+    
+    // Mark we're transitioning and update the last transition time
+    isTransitioningRef.current = true;
+    globalDragTracking.inTransition = true;
+    lastTransitionTimeRef.current = now;
+    
+    // Temporarily disable edge detection during transition
+    globalDragTracking.edgeDetectionEnabled = false;
+    
+    // Visual indicator of transition in the overlay
+    if (customDragState.isDragging && globalDragTracking.activeOverlay) {
+      const cardElement = globalDragTracking.activeOverlay.querySelector('div');
+      if (cardElement) {
+        // Add a visual effect for transition
+        cardElement.classList.add('pulse-outline');
+        cardElement.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.25)';
       }
+    }
+    
+    // Calculate new date
+    const newDate = direction === 'left' ? subDays(currentDate, 1) : addDays(currentDate, 1);
+    const newDateStr = format(newDate, "yyyy-MM-dd");
+    
+    // Store the target date for synchronization
+    reactSyncRef.current.targetDateAfterTransition = newDateStr;
+    globalDragTracking.lastDetectedColumn = newDateStr;
+    
+    // Update day offset counter
+    dayOffsetRef.current += direction === 'left' ? -1 : 1;
+    
+    // Haptic feedback - Android pattern for page change
+    if (navigator.vibrate) {
+      navigator.vibrate(25);
+    }
+    
+    // Update the event's date in drag state
+    if (customDragState.isDragging && customDragState.event) {
+      const updatedEvent = {
+        ...customDragState.event,
+        date: newDateStr
+      };
       
-      // Get the cursor/touch position
-      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      // Mark that we're updating React state
+      globalDragTracking.synchronizingWithReact = true;
+      reactSyncRef.current.lastStateUpdate = Date.now();
       
-      // Always update the global position tracking
-      globalDragTracking.currentPosition = { x: clientX, y: clientY };
-      
-      // Update React state too
       setCustomDragState(prev => ({
         ...prev,
-        position: { x: clientX, y: clientY }
+        event: updatedEvent,
+        // Reset hover state for clean detection on the new day
+        currentlyHovering: null,
+        // Keep the position intact
+        dropTargetId: null
       }));
+    }
+    
+    // Create a subtle "page flip" effect - Android-like
+    const pageFlipEffect = document.createElement('div');
+    pageFlipEffect.className = 
+      `fixed inset-0 pointer-events-none z-[9000] ${direction === 'left' ? 'bg-gradient-to-r' : 'bg-gradient-to-l'} from-blue-500/10 to-transparent`;
+    document.body.appendChild(pageFlipEffect);
+    
+    // Remove the effect after the transition
+    setTimeout(() => {
+      pageFlipEffect.style.opacity = '0';
+      pageFlipEffect.style.transition = 'opacity 0.2s ease';
+      setTimeout(() => {
+        document.body.removeChild(pageFlipEffect);
+      }, 200);
+    }, 50);
+    
+    // Log and change date
+    console.log(`Transitioning to ${newDateStr}`);
+    onDateChange(newDate);
+    
+    // Use a longer delay to ensure React rendering completes before re-enabling features
+    setTimeout(() => {
+      // Remove transition visual indicator
+      if (globalDragTracking.activeOverlay) {
+        const cardElement = globalDragTracking.activeOverlay.querySelector('div');
+        if (cardElement) {
+          cardElement.classList.remove('pulse-outline');
+          cardElement.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.15)';
+        }
+      }
       
-      // Edge detection logic - recalculates container bounds on every move to ensure it works after transitions
-      if (!isTransitioningRef.current && effectiveView === 'day') {
-        // Critical fix: Get a fresh reference to the container for accurate edge detection after transition
-        const container = document.querySelector('.calendar-container');
-        // If container element isn't available yet, use the containerRef as fallback
-        const containerRect = container 
-          ? container.getBoundingClientRect() 
-          : containerRef.current?.getBoundingClientRect();
+      // Complete transition state
+      isTransitioningRef.current = false;
+      globalDragTracking.inTransition = false;
+      globalDragTracking.synchronizingWithReact = false;
+      
+      console.log("Transition complete");
+      
+      // Handle any pending drops
+      if (globalDragTracking.dropPending) {
+        console.log("Processing delayed drop after transition");
+        finalizeCustomDrag();
+        return;
+      }
+      
+      // Re-enable edge detection with a slight delay to prevent immediate re-triggering
+      setTimeout(() => {
+        console.log("Re-enabling edge detection");
+        globalDragTracking.edgeDetectionEnabled = true;
         
-        if (containerRect) {
-          const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
-          const leftEdgeBoundary = containerRect.left + edgeWidth;
-          const rightEdgeBoundary = containerRect.right - edgeWidth;
-          
-          // Determine which edge we're on, if any
-          let currentEdge: 'left' | 'right' | null = null;
-          
-          if (clientX < leftEdgeBoundary) {
-            currentEdge = 'left';
-            console.log("Left edge detected at", clientX);
-          } else if (clientX > rightEdgeBoundary) {
-            currentEdge = 'right';
-            console.log("Right edge detected at", clientX);
-          }
-          
-          // Only update and trigger transition if edge changed
-          if (currentEdge !== customDragState.currentlyHovering) {
-            // Update the hover state
-            setCustomDragState(prev => ({ 
-              ...prev, 
-              currentlyHovering: currentEdge 
-            }));
-            
-            // Trigger transition if we're at an edge and it's a new edge
-            if (currentEdge && Date.now() - lastTransitionTimeRef.current > TRANSITION_COOLDOWN) {
-              triggerDateChange(currentEdge);
-            }
-          }
-          
-          // Drop target detection
-          const elementsAtPoint = document.elementsFromPoint(clientX, clientY);
-          const eventCardUnderCursor = elementsAtPoint.find(el => {
-            const card = el.closest('.event-card');
-            return card && 
-                   card.getAttribute('data-event-id') && 
-                   card.getAttribute('data-event-id') !== customDragState.event?.id;
-          });
-          
-          // Check for bottom drop zone too
-          const bottomDropZone = elementsAtPoint.find(el => 
-            el.getAttribute('data-drop-zone') === 'bottom'
-          );
-          
-          let targetEventId = eventCardUnderCursor?.closest('.event-card')?.getAttribute('data-event-id') || null;
-          
-          // Special case: If we're over the bottom drop zone with no specific card targeted
-          if (!targetEventId && bottomDropZone && filteredEvents.length > 0) {
-            // Use the last event's ID as the insertion point (to add at the end)
-            targetEventId = filteredEvents[filteredEvents.length - 1].id;
-          }
-          
-          if (customDragState.dropTargetId !== targetEventId) {
-            setCustomDragState(prev => ({
-              ...prev,
-              dropTargetId: targetEventId
-            }));
-          }
+        // Reset edge state
+        globalDragTracking.hasBeenAtEdge = false;
+        globalDragTracking.firstEdgeEntryTime = 0;
+      }, 200);
+      
+    }, 300);
+  }, [currentDate, onDateChange, customDragState, finalizeCustomDrag]);
+  
+  // Store the most recent version of triggerDateChange in a ref for event listener access
+  useEffect(() => {
+    triggerDateChangeRef.current = triggerDateChange;
+  }, [triggerDateChange]);
+  
+  // Improved edge detection event listener with active hold support
+  useEffect(() => {
+    const handleEdgeDetection = (e: CustomEvent) => {
+      if (triggerDateChangeRef.current && 
+          !isTransitioningRef.current && 
+          !globalDragTracking.inTransition &&
+          globalDragTracking.edgeDetectionEnabled) {
+        const edge = e.detail?.edge as 'left' | 'right';
+        const isActiveHold = !!e.detail?.activeHold;
+        
+        if (edge) {
+          console.log(`Edge detection event fired: ${edge}${isActiveHold ? ' (active hold)' : ''}`);
+          triggerDateChangeRef.current(edge, isActiveHold);
         }
       }
     };
     
-    // Enhanced end handlers that use forceDrop
-    const handleEnd = (e: MouseEvent | TouchEvent) => {
-      console.log("END EVENT TRIGGERED", e.type);
-      forceDrop();
-    };
+    // Add the event listener
+    document.addEventListener('edgeDetected', handleEdgeDetection as EventListener);
     
-    // Register handlers at multiple levels for reliability
-    // 1. Document level with capture phase
-    document.addEventListener('mousemove', handleMove, { passive: false, capture: true });
-    document.addEventListener('touchmove', handleMove, { passive: false, capture: true });
-    document.addEventListener('mouseup', handleEnd, { capture: true });
-    document.addEventListener('touchend', handleEnd, { capture: true });
-    
-    // 2. Direct body handlers as backup
-    document.body.addEventListener('touchend', handleEnd, { passive: false });
-    document.body.addEventListener('mouseup', handleEnd, { passive: false });
-    
-    // 3. Add direct window handlers for maximum reliability
-    window.addEventListener('touchend', handleEnd);
-    window.addEventListener('mouseup', handleEnd);
-    
-    // Clean up all handlers
     return () => {
-      document.removeEventListener('mousemove', handleMove, { capture: true });
-      document.removeEventListener('touchmove', handleMove, { capture: true });
-      document.removeEventListener('mouseup', handleEnd, { capture: true });
-      document.removeEventListener('touchend', handleEnd, { capture: true });
-      
-      document.body.removeEventListener('touchend', handleEnd);
-      document.body.removeEventListener('mouseup', handleEnd);
-      
-      window.removeEventListener('touchend', handleEnd);
-      window.removeEventListener('mouseup', handleEnd);
-      
-      console.log("Removed all global event handlers");
+      document.removeEventListener('edgeDetected', handleEdgeDetection as EventListener);
     };
-  }, [customDragState.isDragging, forceDrop]);
-  
+  }, []);
+
+  // Refactored effect for handling global drag listeners using Pointer Events
+  useEffect(() => {
+    if (!customDragState.isDragging) return;
+    
+    console.log("Setting up global POINTER event handlers for drag");
+    
+    // --- Pointer Move Handler ---
+    const handlePointerMove = (e: PointerEvent) => {
+      // No need to prevent default typically for pointermove on document
+      
+      // Always update the global position tracking
+      globalDragTracking.currentPosition = { x: e.clientX, y: e.clientY };
+      
+      // Update React state for position
+      // Throttle this slightly? Maybe not needed if performance is okay.
+      setCustomDragState(prev => ({
+        ...prev,
+        position: { x: e.clientX, y: e.clientY }
+      }));
+    };
+
+    // --- Pointer End Handler (unified for pointerup/pointercancel) ---
+    const handlePointerEnd = (e: PointerEvent) => {
+      console.log(`%cPOINTER END EVENT DETECTED: ${e.type} (Pointer ID: ${e.pointerId})`, "color: red; font-weight: bold;");
+      
+      // Ensure we only finalize once and for the correct pointer
+      if (!globalDragTracking.isTracking) {
+        console.log("Ignoring pointer end event, tracking already stopped.");
+        return;
+      }
+      
+      // If a specific pointer type needs tracking (multi-touch), add checks here
+      // For now, assume any pointer up/cancel ends the drag
+
+      // Check transition flags
+      if (isTransitioningRef.current || globalDragTracking.inTransition) {
+        console.log("%cPointer up/cancel during transition - marking drop as pending.", "color: orange;");
+        globalDragTracking.dropPending = true;
+        return; // Will be handled when transition completes
+      }
+      
+      // If we reach here, finalize the drag
+      console.log("%cFinalizing drag immediately on pointer event:", "color: green;", e.type);
+      finalizeCustomDrag();
+    };
+    
+    // Add primary listeners to the document with capture phase
+    document.addEventListener('pointermove', handlePointerMove, { capture: true });
+    document.addEventListener('pointerup', handlePointerEnd, { capture: true });
+    document.addEventListener('pointercancel', handlePointerEnd, { capture: true }); // Handle cancellation/interruptions
+    
+    // Style to prevent text selection, etc.
+    document.body.style.userSelect = 'none';
+    
+    // Clean up listeners and styles
+    return () => {
+      console.log("Removing global POINTER event handlers for drag");
+      document.removeEventListener('pointermove', handlePointerMove, { capture: true });
+      document.removeEventListener('pointerup', handlePointerEnd, { capture: true });
+      document.removeEventListener('pointercancel', handlePointerEnd, { capture: true });
+      document.body.style.userSelect = ''; // Restore text selection
+    };
+  }, [customDragState.isDragging, finalizeCustomDrag]); 
+
+  // Add updated useEffect for better date change handling
+  useEffect(() => {
+    console.log(`Current date updated to: ${format(currentDate, 'yyyy-MM-dd')}`);
+    
+    if (prevDateRef.current && prevDateRef.current !== currentDate) {
+      // This means the date has actually changed
+      const newDateStr = format(currentDate, "yyyy-MM-dd");
+      
+      // Handle drag state coordination during date changes
+      if (customDragState.isDragging) {
+        globalDragTracking.lastDetectedColumn = newDateStr;
+      }
+    }
+    
+    prevDateRef.current = currentDate;
+    
+    // Mark transition as complete after a brief delay to ensure rendering is done
+    setTimeout(() => {
+      isTransitioningRef.current = false;
+      globalDragTracking.inTransition = false;
+      
+      // If we're in the middle of a drag, reset the edge hovering state
+      if (customDragState.isDragging) {
+        setCustomDragState(prev => ({
+          ...prev,
+          currentlyHovering: null
+        }));
+      }
+      
+      // Handle any pending drop requests
+      if (globalDragTracking.dropPending) {
+        console.log("Processing pending drop after date change completed");
+        finalizeCustomDrag();
+      }
+    }, 100);
+  }, [currentDate, customDragState.isDragging, finalizeCustomDrag]);
+
   // Generate dynamic mock events based on the initial date
   useEffect(() => {
     const generatedEvents: KanbanEvent[] = [];
@@ -860,23 +1001,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     setAllEvents(generatedEvents);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  // Logging when currentDate changes
-  useEffect(() => {
-    console.log(`Current date updated to: ${format(currentDate, 'yyyy-MM-dd')}`);
-    prevDateRef.current = currentDate;
-    
-    // Mark transition as complete
-    isTransitioningRef.current = false;
-    
-    // If we're in the middle of a drag, reset the edge hovering state
-    if (customDragState.isDragging) {
-      setCustomDragState(prev => ({
-        ...prev,
-        currentlyHovering: null
-      }));
-    }
-  }, [currentDate, customDragState.isDragging]);
 
   // Mobile swipe navigation (when not dragging)
   const handleSwipe = useCallback((
@@ -1063,7 +1187,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           {effectiveView === 'week' ? (
             <CalendarWeekView
               currentDate={currentDate}
-              eventsByDate={eventsByDateForWeek}
+              eventsByDate={eventsByDateForWeek.current}
               customDragState={customDragState}
               onEventClick={handleEventClick}
               onEventMouseDown={handleEventMouseDown}
@@ -1401,27 +1525,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
                       </svg>
                       Back
                     </motion.button>
-                    
-                    {/* <motion.button 
-                      className="flex-1 py-3.5 px-4 bg-blue-500 rounded-xl text-white font-medium flex items-center justify-center gap-2 shadow-md shadow-blue-500/20"
-                      onClick={() => {
-                        console.log('Edit event:', detailViewEvent);
-                        closeDetailView();
-                      }}
-                      whileHover={{ 
-                        backgroundColor: "#3b82f6", 
-                        scale: 1.02,
-                        boxShadow: '0 8px 20px rgba(59, 130, 246, 0.35)'
-                      }}
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                      Edit Event
-                    </motion.button> */}
                   </motion.div>
                 </div>
               </motion.div>
