@@ -149,9 +149,9 @@ const CalendarDayView = ({
         </div>
       )}
 
-      {/* Main content container - simplified */}
+      {/* Main content container */}
       <div className={cn(
-        "p-4 overflow-y-auto h-full",
+        "p-4 overflow-y-auto h-full calendar-day-view-content", // Added calendar-day-view-content class for targeting drop animations
         isEdgeHovering && "opacity-80", // Simple visual feedback when edge hovering
         customDragState.isDragging && "touch-none" // Prevent touch actions during drag
       )}>
