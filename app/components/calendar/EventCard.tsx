@@ -1,5 +1,6 @@
 "use client";
 
+import React from 'react';
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { motion } from "framer-motion";
@@ -7,9 +8,14 @@ import { KanbanEvent } from "@/app/lib/utils";
 import { cn } from "@/app/lib/utils";
 import { Clock, CalendarDays } from "lucide-react";
 
-interface EventCardProps {
+export interface EventCardProps {
   event: KanbanEvent;
+  isSource?: boolean;
+  isDraggable?: boolean;
+  isDropTarget?: boolean;
   onClick: (event: KanbanEvent) => void;
+  onMouseDown?: (e: React.MouseEvent) => void;
+  onTouchStart?: (e: React.TouchEvent) => void;
 }
 
 // Simple hash function for color generation
@@ -35,7 +41,15 @@ const eventColors = [
   { bg: "bg-fuchsia-100", text: "text-fuchsia-700", border: "border-fuchsia-300" },
 ];
 
-const EventCard = ({ event, onClick }: EventCardProps) => {
+const EventCard: React.FC<EventCardProps> = ({
+  event,
+  isSource = false,
+  isDraggable = true,
+  isDropTarget = false,
+  onClick,
+  onMouseDown,
+  onTouchStart
+}) => {
   const {
     attributes,
     listeners,
@@ -52,7 +66,7 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
       ? transition
       : 'transform 200ms ease-out, opacity 200ms ease-out',
     opacity: isDragging ? 0.8 : 1,
-    touchAction: 'none',
+    touchAction: isDraggable ? 'none' : 'auto',
     ...(isDragging ? { zIndex: 10 } : {}),
   };
 
@@ -70,7 +84,8 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
-        isDragging && "shadow-lg ring-2 ring-blue-400 rotate-1 scale-[1.02]"
+        isDragging && "shadow-lg ring-2 ring-blue-400 rotate-1 scale-[1.02]",
+        isSource && !isDropTarget && "opacity-40"
       )}
       data-event-id={event.id}
       onClick={(e) => {
@@ -79,13 +94,9 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
           onClick(event);
         }
       }}
+      onMouseDown={onMouseDown}
+      onTouchStart={onTouchStart}
       whileHover={{ y: -2 }}
-      onTouchStart={(e) => {
-        // This helps mobile browsers initiate drag immediately
-        if (!isDragging) {
-          e.currentTarget.style.webkitUserSelect = 'none';
-        }
-      }}
     >
       {/* Image Section - Full width, consistent height */}
       {event.imageUrl && (
@@ -136,4 +147,4 @@ const EventCard = ({ event, onClick }: EventCardProps) => {
   );
 };
 
-export default EventCard; 
+export default React.memo(EventCard); 

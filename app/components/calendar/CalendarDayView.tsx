@@ -103,6 +103,8 @@ const CalendarDayView = ({
   // Simple function to check if we're hovering near an edge
   const isEdgeHovering = customDragState.isDragging && customDragState.currentlyHovering !== null;
   
+  const formattedDate = format(currentDate, "yyyy-MM-dd");
+  
   return (
     <div className="relative h-full overflow-hidden" ref={containerRef}>
       {/* Edge indicators - simplified */}
@@ -153,36 +155,56 @@ const CalendarDayView = ({
         isEdgeHovering && "opacity-80", // Simple visual feedback when edge hovering
         customDragState.isDragging && "touch-none" // Prevent touch actions during drag
       )}>
+        <h3 className="text-lg font-medium text-gray-900 mb-4">
+          {format(currentDate, "EEEE, MMMM d, yyyy")}
+        </h3>
+
         {dayEvents.length === 0 ? (
-          <p className="text-center text-slate-500 pt-10">No events scheduled.</p>
+          <div className="flex items-center justify-center flex-1 text-gray-400">
+            No events for this day
+          </div>
         ) : (
-          <div className="space-y-2">
-            {dayEvents.map(event => (
+          <div 
+            className={cn(
+              "space-y-3 relative",
+              customDragState.isDragging && "pb-10" // Additional padding during drag
+            )}
+          >
+            {dayEvents.map((event, index) => (
               <div
                 key={event.id}
-                onMouseDown={(e) => handlePointerDown(event, e)}
-                onTouchStart={(e) => handlePointerDown(event, e)}
-                onMouseUp={() => handlePointerUp(event)}
-                onTouchEnd={() => handlePointerUp(event)}
-                onMouseLeave={handlePointerLeave}
                 className={cn(
-                  "cursor-grab active:cursor-grabbing event-card select-none",
-                  pressedEvent?.id === event.id && "opacity-90 scale-[0.98]",
-                  customDragState.dropTargetId === event.id && "border-2 border-blue-500 rounded-lg",
-                  customDragState.event?.id === event.id && "opacity-0" // Hide original when dragging
+                  "relative",
+                  // If this is the drop target while dragging, show insertion indicator
+                  customDragState.dropTargetId === event.id && "before:absolute before:left-0 before:right-0 before:h-1 before:bg-blue-400 before:rounded before:-top-2 before:z-10 before:animate-pulse"
                 )}
-                data-event-id={event.id}
-                style={{ 
-                  touchAction: 'none', 
-                  transition: customDragState.isDragging ? 'none' : 'transform 0.1s, opacity 0.1s' 
-                }}
               >
                 <EventCard
                   event={event}
-                  onClick={() => {}} // Handled by our custom handlers
+                  isSource={customDragState.event?.id === event.id}
+                  isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
+                  isDropTarget={customDragState.dropTargetId === event.id}
+                  onClick={() => onEventClick(event)}
+                  onMouseDown={(e) => onEventMouseDown(event, e)}
+                  onTouchStart={(e) => onEventMouseDown(event, e)}
                 />
               </div>
             ))}
+            
+            {/* Space at the bottom that can receive drops during drag */}
+            {customDragState.isDragging && (
+              <div 
+                className={cn(
+                  "absolute left-0 right-0 bottom-0 h-10 bg-transparent",
+                  // Highlight when hovering over the bottom area with no specific target
+                  customDragState.isDragging && 
+                  !customDragState.dropTargetId && 
+                  formattedDate === format(currentDate, "yyyy-MM-dd") && 
+                  "border-2 border-dashed border-blue-200 rounded-md"
+                )}
+                data-drop-zone="bottom"
+              />
+            )}
           </div>
         )}
       </div>
