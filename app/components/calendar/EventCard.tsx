@@ -32,6 +32,7 @@ const eventColors = [
 // Extend the original props type
 interface EventCardProps extends OriginalEventCardProps {
   showViewDetailsButton?: boolean;
+  isCompact?: boolean; // New prop for compact mode in week view
 }
 
 const EventCard: React.FC<EventCardProps> = ({
@@ -40,6 +41,7 @@ const EventCard: React.FC<EventCardProps> = ({
   isDraggable = true,
   isDropTarget = false,
   showViewDetailsButton = false, // Default to false
+  isCompact = false, // Default to regular mode
   onClick,
   onMouseDown,
   onMouseUp,
@@ -62,6 +64,53 @@ const EventCard: React.FC<EventCardProps> = ({
   // It should be clickable ONLY if the button is NOT shown (Week View)
   const isCardClickable = !showViewDetailsButton;
 
+  // For week view, use a more compact layout
+  if (isCompact) {
+    return (
+      <motion.div
+        className={cn(
+          "relative z-0 group bg-white rounded-md overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-1 hover:z-10",
+          "border border-slate-200 shadow-sm hover:shadow transition-all duration-150",
+          "flex flex-col",
+          "event-card",
+          isSource && !isDropTarget && "opacity-40"
+        )}
+        data-event-id={event.id}
+        onClick={onClick ? () => onClick(event) : undefined}
+        onMouseDown={onMouseDown}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseLeave}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        whileHover={{ y: -1 }}
+        style={{
+          touchAction: isDraggable ? 'pan-y' : 'auto',
+        }}
+      >
+        {/* Simplified content for week view */}
+        <div className={cn(
+          "flex items-center px-2 py-1.5 gap-1.5",
+          colorSet.bg
+        )}>
+          {/* Left accent */}
+          <div className={cn("h-full w-1 rounded-full self-stretch", colorSet.border)}></div>
+          <div className="flex-1 min-w-0">
+            {/* Title only - truncated */}
+            <h3 className={cn("font-medium text-xs leading-tight truncate", colorSet.text)}>
+              {event.title}
+            </h3>
+            
+            {/* Just the time, no date */}
+            <div className="flex items-center text-xs text-slate-600 mt-0.5">
+              <span className="text-[10px] font-medium truncate">{event.time.toLowerCase()}</span>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // Regular card for day view
   return (
     <motion.div
       className={cn(
@@ -69,7 +118,8 @@ const EventCard: React.FC<EventCardProps> = ({
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
-        isSource && !isDropTarget && "opacity-40"
+        isSource && !isDropTarget && "opacity-40 scale-[0.98] shadow-md", // Subtle scale down and shadow for source card
+        isSource && "z-20" // Higher z-index for the source card when dragging
       )}
       data-event-id={event.id}
       // Attach onClick to the main div ONLY if the button isn't shown

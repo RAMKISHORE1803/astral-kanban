@@ -52,7 +52,7 @@ const Column = ({
       {/* Column content - scrollable */}
       <div 
         className={cn(
-          "flex-1 p-2 space-y-2 overflow-y-auto",
+          "flex-1 p-1.5 space-y-1.5 overflow-y-auto",
           "scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent",
           "relative"
         )}
@@ -81,6 +81,7 @@ const Column = ({
                   onClick={() => onEventClick(event)}
                   onMouseDown={(e) => onEventMouseDown(event, e)}
                   isDraggable={true}
+                  isCompact={true}
                 />
               </div>
             ))

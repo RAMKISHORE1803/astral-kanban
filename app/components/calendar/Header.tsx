@@ -132,7 +132,6 @@ const Header = ({ currentDate, onDateChange, view, onViewChange }: HeaderProps) 
                 )}>
                   {format(day, "d")}
                 </span>
-                 {/* Removed layout animation for highlight - simpler underline/dot might be better GCal style */}
               </button>
             );
           })}
