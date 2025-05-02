@@ -69,7 +69,7 @@ const events: EventsByDate = {
       id: "event-5",
       title: "Client Meeting",
       description: "Review project progress, timeline adjustments, and outline roadmap for next quarter with the client.",
-      imageUrl: "https://4.imimg.com/data4/WE/YY/MY-13164308/event-management-service.jpgs",
+      imageUrl: "https://flsc.co.uk/wp-content/uploads/2024/07/Appointment-Setting-Meeting-.webp",
       time: "11:30 AM",
     },
     {
