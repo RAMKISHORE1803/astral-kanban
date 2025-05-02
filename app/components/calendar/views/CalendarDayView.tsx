@@ -279,7 +279,7 @@ const CalendarDayView = ({
       {/* Scrollable Content - Using the same approach as in CalendarWeekView */}
       <div 
         ref={contentRef}
-        className="overflow-y-auto p-4 relative"
+        className="overflow-y-auto p-4 relative bg-gray-50"
         style={{
           height: "calc(100% - 56px)", /* Calculated height based on parent height minus header */
           maxHeight: "calc(100% - 56px)"
@@ -289,35 +289,29 @@ const CalendarDayView = ({
         <div className="absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-white/80 to-transparent pointer-events-none z-[1] opacity-0 transition-opacity duration-200 scroll-shadow-top"></div>
         <div className="absolute bottom-0 left-0 right-0 h-3 bg-gradient-to-t from-white/80 to-transparent pointer-events-none z-[1] opacity-0 transition-opacity duration-200 scroll-shadow-bottom"></div>
         
-        {dayEvents.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-400">
-            No events for this day
-          </div>
-        ) : (
-          <div className="space-y-3 relative pb-10">
-            {dayEvents.map((event) => (
-              <div
-                key={event.id}
-                className="relative"
-                data-event-id={event.id}
-              >
-                <EventCard
-                  showViewDetailsButton={true}
-                  event={event}
-                  isSource={customDragState.event?.id === event.id}
-                  isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
-                  isDropTarget={false}
-                  onClick={() => handleClick(event)}
-                  onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
-                  onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
-                  onTouchEnd={() => handleTouchEnd(event)}
-                />
+        {/* Simple test cards instead of EventCards */}
+        <div className="space-y-3 relative pb-10">
+          {/* Use a large number of cards to ensure scrolling */}
+          {Array.from({ length: 30 }, (_, i) => (
+            <div 
+              key={i} 
+              className="p-4 rounded-lg bg-white border border-slate-200 shadow-sm"
+              style={{ minHeight: '100px' }} // Force each card to have minimum height
+            >
+              <div className="font-medium text-lg">Test Card #{i + 1}</div>
+              <div className="mt-2 text-sm text-slate-500">This is a simple test card to check scrolling functionality</div>
+              <div className="mt-2 flex items-center text-xs text-slate-500">
+                <span className="font-medium">9:00 AM</span>
+                <span className="mx-2">•</span>
+                <span>Simple card content</span>
               </div>
-            ))}
-            {/* Bottom padding for scrolling comfort */}
-            <div className="h-10"></div>
-          </div>
-        )}
+              {/* Extra content to ensure cards are tall enough */}
+              <div className="mt-4 h-10 bg-slate-100 rounded"></div>
+            </div>
+          ))}
+          {/* Bottom padding for scrolling comfort */}
+          <div className="h-10"></div>
+        </div>
       </div>
     </div>
   );
