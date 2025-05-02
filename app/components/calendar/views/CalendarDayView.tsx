@@ -10,8 +10,7 @@ import type { KanbanEvent, CalendarDayViewProps } from "@/app/types/calendar";
 
 // Constants
 const SCROLL_THRESHOLD = 10; // pixels of vertical movement to detect scroll intent
-const LONG_PRESS_DURATION = 350; // Slightly faster long press (was 400ms)
-const DRAG_MOVEMENT_THRESHOLD = 5; // Lower threshold for movement to register as drag
+const LONG_PRESS_DURATION = 300; // Even faster long press for more responsiveness
 
 const CalendarDayView = ({
   currentDate,
@@ -30,15 +29,11 @@ const CalendarDayView = ({
   const [pressedEvent, setPressedEvent] = useState<KanbanEvent | null>(null);
   const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // State for visual feedback during long press
-  const [longPressProgress, setLongPressProgress] = useState<{id: string, progress: number} | null>(null);
-  const longPressAnimationRef = useRef<NodeJS.Timeout | null>(null);
+  // Reference to content area
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Ref to store the current date to detect changes
   const prevDateRef = useRef(currentDate);
-
-  // Reference to content area
-  const contentRef = useRef<HTMLDivElement>(null);
 
   // Effect to handle date changes
   useEffect(() => {
@@ -54,25 +49,18 @@ const CalendarDayView = ({
   }, [currentDate, customDragState.isDragging]);
   
   /**
-   * Clear any active press timers and animations
+   * Clear any active press timers
    */
   const clearPressTimer = useCallback(() => {
     if (pressTimerRef.current) {
       clearTimeout(pressTimerRef.current);
       pressTimerRef.current = null;
     }
-    
-    // Clear animation timer and state
-    if (longPressAnimationRef.current) {
-      clearInterval(longPressAnimationRef.current);
-      longPressAnimationRef.current = null;
-    }
-    setLongPressProgress(null);
   }, []);
 
   /**
    * Handle initial touch down
-   * Starts long press timer for drag initiation with visual feedback
+   * Starts long press timer for drag initiation
    */
   const handleTouchStart = useCallback((event: KanbanEvent, e: React.TouchEvent) => {
     if (customDragState.isDragging) return;
@@ -87,40 +75,25 @@ const CalendarDayView = ({
       y: e.touches[0].clientY
     });
     
-    // Set up visual feedback for long press
-    setLongPressProgress({ id: event.id, progress: 0 });
-    
-    // Animate progress for visual feedback
-    let progress = 0;
-    const animationSteps = 10; // Number of steps for the animation
-    const stepTime = LONG_PRESS_DURATION / animationSteps;
-    
-    longPressAnimationRef.current = setInterval(() => {
-      progress += 1;
-      setLongPressProgress(prev => 
-        prev ? { ...prev, progress: progress * (100 / animationSteps) } : null
-      );
-      
-      if (progress >= animationSteps) {
-        if (longPressAnimationRef.current) {
-          clearInterval(longPressAnimationRef.current);
-          longPressAnimationRef.current = null;
-        }
-      }
-    }, stepTime);
-    
     // Start long press timer for drag initiation
     pressTimerRef.current = setTimeout(() => {
+      // Trigger vibration if available (for tactile feedback)
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(50); // Short 50ms vibration
+      }
+      
+      // Start the drag operation
       onEventMouseDown(event, e);
+      
+      // Clean up
       setPressedEvent(null);
       setTouchStartPos(null);
-      setLongPressProgress(null);
     }, LONG_PRESS_DURATION);
   }, [clearPressTimer, customDragState.isDragging, onEventMouseDown]);
 
   /**
    * Handle touch move
-   * Allow movement in any direction without restrictions
+   * Allow movement in any direction with minimal restrictions
    */
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!touchStartPos || customDragState.isDragging) return;
@@ -130,10 +103,10 @@ const CalendarDayView = ({
     const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.x);
     const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     
-    // Only cancel long press if there's significant movement in any direction
-    // This allows small accidental movements but prevents long press during intentional scrolling
-    if (totalMovement > SCROLL_THRESHOLD) {
-      clearPressTimer(); // Cancel long press if there's significant movement
+    // Only cancel long press if there's significant movement
+    // Using a slightly higher threshold allows for natural hand shakiness
+    if (totalMovement > SCROLL_THRESHOLD * 1.5) {
+      clearPressTimer();
     }
   }, [touchStartPos, customDragState.isDragging, clearPressTimer]);
 
@@ -163,7 +136,7 @@ const CalendarDayView = ({
   
   /**
    * Handle mouse down event
-   * Starts long press timer for drag initiation with visual feedback
+   * Starts long press timer for drag initiation
    */
   const handleMouseDown = useCallback((event: KanbanEvent, e: React.MouseEvent) => {
     if (customDragState.isDragging) return;
@@ -172,33 +145,10 @@ const CalendarDayView = ({
     clearPressTimer();
     setPressedEvent(event);
     
-    // Set up visual feedback for long press
-    setLongPressProgress({ id: event.id, progress: 0 });
-    
-    // Animate progress for visual feedback
-    let progress = 0;
-    const animationSteps = 10; // Number of steps for the animation
-    const stepTime = LONG_PRESS_DURATION / animationSteps;
-    
-    longPressAnimationRef.current = setInterval(() => {
-      progress += 1;
-      setLongPressProgress(prev => 
-        prev ? { ...prev, progress: progress * (100 / animationSteps) } : null
-      );
-      
-      if (progress >= animationSteps) {
-        if (longPressAnimationRef.current) {
-          clearInterval(longPressAnimationRef.current);
-          longPressAnimationRef.current = null;
-        }
-      }
-    }, stepTime);
-    
     // Start timer for drag initiation
     pressTimerRef.current = setTimeout(() => { 
       onEventMouseDown(event, e);
       setPressedEvent(null);
-      setLongPressProgress(null);
     }, LONG_PRESS_DURATION);
   }, [clearPressTimer, customDragState.isDragging, onEventMouseDown]);
 
@@ -371,27 +321,6 @@ const CalendarDayView = ({
                 className="relative"
                 data-event-id={event.id}
               >
-                {/* Visual feedback layer for long press */}
-                {longPressProgress && longPressProgress.id === event.id && (
-                  <div 
-                    className="absolute inset-0 bg-blue-500/10 rounded-lg z-10 pointer-events-none"
-                    style={{ 
-                      boxShadow: `0 0 0 ${Math.min(8, longPressProgress.progress / 12.5)}px rgba(59, 130, 246, ${longPressProgress.progress / 100 * 0.4})`,
-                      transition: 'all 0.1s ease-out'
-                    }}
-                  >
-                    {/* Circular progress indicator */}
-                    <div className="absolute top-2 right-2 w-5 h-5 rounded-full overflow-hidden flex items-center justify-center bg-white/80">
-                      <div 
-                        className="absolute inset-0 bg-blue-500 origin-left"
-                        style={{ 
-                          clipPath: `polygon(0 0, ${longPressProgress.progress}% 0, ${longPressProgress.progress}% 100%, 0% 100%)`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                )}
-                
                 <EventCard
                   showViewDetailsButton={true}
                   event={event}

@@ -84,7 +84,7 @@ const EventCard: React.FC<EventCardProps> = ({
         onTouchEnd={onTouchEnd}
         whileHover={{ y: -1 }}
         style={{
-          touchAction: isDraggable ? 'pan-y' : 'auto',
+          touchAction: 'none',  // Prevent browser handling touches at all for more control
         }}
       >
         {/* Simplified content for week view */}
@@ -118,7 +118,7 @@ const EventCard: React.FC<EventCardProps> = ({
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
-        isSource && !isDropTarget && "opacity-40 scale-[0.98] shadow-md", // Subtle scale down and shadow for source card
+        isSource && !isDropTarget && "opacity-50 scale-[0.99]", // Subtle scale and opacity for dragged card
         isSource && "z-20" // Higher z-index for the source card when dragging
       )}
       data-event-id={event.id}
@@ -129,9 +129,13 @@ const EventCard: React.FC<EventCardProps> = ({
       onMouseLeave={onMouseLeave}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
-      whileHover={{ y: -2 }}
+      // Remove hover animation to avoid interference with drag
+      whileHover={isDraggable ? undefined : { y: -2 }}
+      // Use faster animation transitions to feel more responsive
+      transition={{ duration: 0.1 }}
       style={{
-        touchAction: isDraggable ? 'pan-y' : 'auto',
+        touchAction: 'none', // Completely disable browser touch actions for more precise control
+        willChange: 'transform', // Hardware acceleration hint
       }}
     >
       {/* Image Section - Full width, consistent height */}
