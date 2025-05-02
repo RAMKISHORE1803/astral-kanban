@@ -79,7 +79,6 @@ export interface HeaderProps {
   currentDate: Date;
   onDateChange: (date: Date) => void;
   view: "week" | "day";
-  onViewChange: (view: "week" | "day") => void;
 }
 
 // --- Shared Internal Types --- 
@@ -92,6 +91,7 @@ export interface CustomDragState {
   startedOn: string | null;
   currentlyHovering: 'left' | 'right' | null;
   dropTargetId: string | null;
+  dragStartTime: number | null;
 }
 
 // Represents the origin rect data for modal animation

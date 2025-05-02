@@ -6,7 +6,6 @@ import { useState, useEffect } from "react";
 import EventCard from "../EventCard";
 import type { CalendarWeekViewProps, ColumnProps } from "@/app/types/calendar";
 
-// Column component for each day
 const Column = ({
   dateStr,
   dayName,
@@ -117,10 +116,8 @@ const CalendarWeekView = ({
   const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
   const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart, { weekStartsOn: 1 }) });
   
-  // Track which column is the drop target
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
 
-  // Update drop target date based on cursor position
   useEffect(() => {
     if (!customDragState.isDragging || !customDragState.position) {
       setDropTargetDate(null);
@@ -129,7 +126,6 @@ const CalendarWeekView = ({
 
     const { x, y } = customDragState.position;
     
-    // Find the column under the cursor
     const elementsAtPoint = document.elementsFromPoint(x, y);
     const columnElement = elementsAtPoint.find(el => el.hasAttribute('data-date') || el.closest('[data-date]'));
     
@@ -145,7 +141,6 @@ const CalendarWeekView = ({
     }
   }, [customDragState.isDragging, customDragState.position]);
 
-  // Add scroll shadow effect on scroll
   useEffect(() => {
     const scrollContainers = document.querySelectorAll('.calendar-week-view .overflow-y-auto');
     
@@ -155,14 +150,12 @@ const CalendarWeekView = ({
       const bottomShadow = container.querySelector('.scroll-shadow-bottom');
       
       if (topShadow && bottomShadow) {
-        // Show top shadow when scrolled down
         if (container.scrollTop > 10) {
           topShadow.classList.add('opacity-100');
         } else {
           topShadow.classList.remove('opacity-100');
         }
         
-        // Show bottom shadow when more content is available to scroll
         if (container.scrollHeight > container.clientHeight && 
             container.scrollTop < (container.scrollHeight - container.clientHeight - 10)) {
           bottomShadow.classList.add('opacity-100');
@@ -172,7 +165,6 @@ const CalendarWeekView = ({
       }
     };
     
-    // Initialize scroll shadows
     scrollContainers.forEach(container => {
       container.addEventListener('scroll', handleScroll);
       // Initialize state on mount

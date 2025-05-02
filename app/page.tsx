@@ -9,12 +9,10 @@ import { format } from "date-fns";
 export default function Home() {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
-  // Default to week view
   const [view, setView] = useState<"week" | "day">("week");
 
-  // Set view based on device - no more toggling
+  // Set view based on device 
   useEffect(() => {
-    // Mobile gets day view, desktop always shows week view
     if (isMobile) {
       setView("day");
     } else {
@@ -28,8 +26,6 @@ export default function Home() {
     setCurrentDate(newDate);
   };
 
-  // We no longer need a separate view toggle handler since we're removing that functionality
-  // The view is now determined solely by the device size
 
   return (
     <main className="flex h-screen max-h-screen flex-col bg-astral-light-gray overflow-hidden">
@@ -37,7 +33,6 @@ export default function Home() {
         currentDate={currentDate}
         onDateChange={handleDateChange}
         view={view}
-        onViewChange={(newView) => {}} // Empty function since we no longer allow toggling
       />
       <div className="flex-1 p-0 md:p-4 overflow-hidden relative">
         <CalendarContainer 

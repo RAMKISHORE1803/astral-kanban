@@ -7,17 +7,12 @@ import EventCard from "../EventCard";
 import { cn } from "@/app/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { KanbanEvent, CalendarDayViewProps } from "@/app/types/calendar";
-
-// Constants
-const SCROLL_THRESHOLD = 10; // pixels of vertical movement to detect scroll intent
-const LONG_PRESS_DURATION = 300; // Even faster long press for more responsiveness
+import { SCROLL_THRESHOLD, LONG_PRESS_DURATION } from "@/app/lib/constants";
 
 const CalendarDayView = ({
   currentDate,
   dayEvents,
   customDragState,
-  dayOffset,
-  debugInfo,
   onEventClick,
   onEventMouseDown,
   containerRef
@@ -29,10 +24,8 @@ const CalendarDayView = ({
   const [pressedEvent, setPressedEvent] = useState<KanbanEvent | null>(null);
   const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
   
-  // Reference to content area
   const contentRef = useRef<HTMLDivElement>(null);
 
-  // Ref to store the current date to detect changes
   const prevDateRef = useRef(currentDate);
 
   // Effect to handle date changes

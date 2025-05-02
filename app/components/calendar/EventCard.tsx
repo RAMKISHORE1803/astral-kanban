@@ -4,7 +4,7 @@ import React from 'react';
 import { motion } from "framer-motion";
 import { cn } from "@/app/lib/utils";
 import { Clock, CalendarDays, GripVertical } from "lucide-react";
-import type { KanbanEvent, EventCardProps as OriginalEventCardProps } from "@/app/types/calendar";
+import type { EventCardProps as OriginalEventCardProps } from "@/app/types/calendar";
 
 // Simple hash function for color generation
 function simpleHash(str: string): number {
@@ -12,12 +12,11 @@ function simpleHash(str: string): number {
   for (let i = 0; i < str.length; i++) {
     const char = str.charCodeAt(i);
     hash = (hash << 5) - hash + char;
-    hash |= 0; // Convert to 32bit integer
+    hash |= 0; 
   }
   return Math.abs(hash);
 }
 
-// Define modern color scheme
 const eventColors = [
   { bg: "bg-blue-100", text: "text-blue-700", border: "border-blue-300" },
   { bg: "bg-emerald-100", text: "text-emerald-700", border: "border-emerald-300" },
@@ -56,16 +55,13 @@ const EventCard: React.FC<EventCardProps> = ({
   const colorIndex = simpleHash(event.id) % eventColors.length;
   const colorSet = eventColors[colorIndex];
 
-  // Handler specifically for the "View Details" button
   const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation(); // Prevent card's onClick if it were to trigger
+    e.stopPropagation(); 
     if (onClick) {
       onClick(event);
     }
   };
 
-  // Determine if the main card div should be clickable
-  // It should be clickable ONLY if the button is NOT shown (Week View)
   const isCardClickable = !showViewDetailsButton;
 
   // Handler specifically for drag handles
@@ -161,10 +157,7 @@ const EventCard: React.FC<EventCardProps> = ({
         isSource && "z-20" // Higher z-index for the source card when dragging
       )}
       data-event-id={event.id}
-      // Don't attach onClick to the main div, only the button should open detail panel
-      // Don't attach drag related events to the card itself
       whileHover={isDraggable ? undefined : { y: -2 }}
-      // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
       style={{
         touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
