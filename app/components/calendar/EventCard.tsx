@@ -81,7 +81,7 @@ const EventCard: React.FC<EventCardProps> = ({
       onTouchEnd={onTouchEnd}
       whileHover={{ y: -2 }}
       style={{
-        touchAction: isDraggable ? 'none' : 'auto',
+        touchAction: isDraggable ? 'pan-y' : 'auto',
       }}
     >
       {/* Image Section - Full width, consistent height */}
