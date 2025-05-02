@@ -68,6 +68,29 @@ const EventCard: React.FC<EventCardProps> = ({
   // It should be clickable ONLY if the button is NOT shown (Week View)
   const isCardClickable = !showViewDetailsButton;
 
+  // Handler specifically for drag handles
+  const handleDragHandleMouseDown = (e: React.MouseEvent) => {
+    // Make sure to capture the event properly
+    e.stopPropagation();
+    e.preventDefault();
+    
+    if (onDragHandleMouseDown) {
+      // Pass the event through for dragging
+      onDragHandleMouseDown(e);
+    }
+  };
+
+  // Handler specifically for drag handles (touch)
+  const handleDragHandleTouchStart = (e: React.TouchEvent) => {
+    // Make sure to capture the event properly
+    e.stopPropagation();
+    
+    if (onDragHandleTouchStart) {
+      // Pass the event through for dragging
+      onDragHandleTouchStart(e);
+    }
+  };
+
   // For week view, use a more compact layout
   if (isCompact) {
     return (
@@ -107,18 +130,17 @@ const EventCard: React.FC<EventCardProps> = ({
             </div>
           </div>
 
-          {/* Drag handle button */}
+          {/* Drag handle button - make even more prominent */}
           <div 
             className={cn(
-              "absolute right-0 top-0 bottom-0 flex items-center justify-center w-7 bg-gradient-to-l",
-              "from-slate-50/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity",
-              isDraggable && "cursor-grab active:cursor-grabbing"
+              "absolute right-0 top-0 bottom-0 flex items-center justify-center w-8 bg-slate-100/90",
+              isDraggable && "cursor-grab active:cursor-grabbing hover:bg-slate-200/90"
             )}
-            onMouseDown={onDragHandleMouseDown}
-            onTouchStart={onDragHandleTouchStart}
+            onMouseDown={handleDragHandleMouseDown}
+            onTouchStart={handleDragHandleTouchStart}
             aria-label="Drag event"
           >
-            <GripVertical size={14} className="text-slate-400" />
+            <GripVertical size={16} className="text-slate-600" />
           </div>
         </div>
       </motion.div>
@@ -162,15 +184,14 @@ const EventCard: React.FC<EventCardProps> = ({
           {isDraggable && (
             <div 
               className={cn(
-                "absolute top-2 right-2 w-8 h-8 rounded-full bg-black/25 backdrop-blur-sm",
-                "flex items-center justify-center cursor-grab active:cursor-grabbing", 
-                "opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                "absolute top-2 right-2 w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm",
+                "flex items-center justify-center cursor-grab active:cursor-grabbing shadow-md"
               )}
-              onMouseDown={onDragHandleMouseDown}
-              onTouchStart={onDragHandleTouchStart}
+              onMouseDown={handleDragHandleMouseDown}
+              onTouchStart={handleDragHandleTouchStart}
               aria-label="Drag event"
             >
-              <GripVertical size={16} className="text-white" />
+              <GripVertical size={18} className="text-white" />
             </div>
           )}
         </div>
@@ -185,16 +206,14 @@ const EventCard: React.FC<EventCardProps> = ({
         {isDraggable && !event.imageUrl && (
           <div 
             className={cn(
-              "absolute top-2 right-2 w-6 h-6 rounded-full",
-              "flex items-center justify-center cursor-grab active:cursor-grabbing", 
-              "opacity-0 group-hover:opacity-100 transition-opacity duration-200",
-              "bg-slate-100"
+              "absolute top-2 right-2 w-8 h-8 rounded-full bg-slate-100 shadow-sm",
+              "flex items-center justify-center cursor-grab active:cursor-grabbing"
             )}
-            onMouseDown={onDragHandleMouseDown}
-            onTouchStart={onDragHandleTouchStart}
+            onMouseDown={handleDragHandleMouseDown}
+            onTouchStart={handleDragHandleTouchStart}
             aria-label="Drag event"
           >
-            <GripVertical size={14} className="text-slate-500" />
+            <GripVertical size={16} className="text-slate-500" />
           </div>
         )}
         

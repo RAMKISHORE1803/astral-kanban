@@ -597,25 +597,19 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         
         // Position overlay at original card position first
         globalDragTracking.activeOverlay.style.transform = `translate3d(${originalRect.left}px, ${originalRect.top}px, 0)`;
+        globalDragTracking.activeOverlay.style.transition = 'none';
         
-        // Then animate to cursor position
+        // Then animate to cursor position immediately
         setTimeout(() => {
           if (globalDragTracking.activeOverlay) {
-            globalDragTracking.activeOverlay.style.transition = 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
-            
             // Calculate position based on cursor offset
             const posX = clientX - cursorOffsetX;
             const posY = clientY - cursorOffsetY;
             
             globalDragTracking.activeOverlay.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
             
-            setTimeout(() => {
-              if (globalDragTracking.activeOverlay) {
-                globalDragTracking.activeOverlay.style.transition = 'none';
-              }
-              if (globalDragTracking.animationFrame) cancelAnimationFrame(globalDragTracking.animationFrame);
-              globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
-            }, 150);
+            if (globalDragTracking.animationFrame) cancelAnimationFrame(globalDragTracking.animationFrame);
+            globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
           }
         }, 0);
       } else {
