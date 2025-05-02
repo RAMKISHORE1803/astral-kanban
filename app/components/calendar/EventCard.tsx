@@ -84,7 +84,7 @@ const EventCard: React.FC<EventCardProps> = ({
         onTouchEnd={onTouchEnd}
         whileHover={{ y: -1 }}
         style={{
-          touchAction: 'pan-y',  // Allow vertical scrolling
+          touchAction: 'auto', // Allow normal touch behavior for scrolling
         }}
       >
         {/* Simplified content for week view */}
@@ -118,7 +118,7 @@ const EventCard: React.FC<EventCardProps> = ({
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
-        isSource && !isDropTarget && "opacity-50 scale-[0.99]", // Subtle scale and opacity for dragged card
+        isSource && !isDropTarget && "opacity-50 scale-[0.98] shadow-md", // Subtle scale and opacity for dragged card
         isSource && "z-20" // Higher z-index for the source card when dragging
       )}
       data-event-id={event.id}
@@ -134,7 +134,7 @@ const EventCard: React.FC<EventCardProps> = ({
       // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
       style={{
-        touchAction: 'pan-y', // Allow vertical scrolling while still enabling drag
+        touchAction: 'auto', // Allow normal touch behavior for scrolling
         willChange: 'transform', // Hardware acceleration hint
       }}
     >

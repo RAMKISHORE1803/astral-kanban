@@ -82,7 +82,7 @@ const CalendarDayView = ({
         window.navigator.vibrate(50); // Short 50ms vibration
       }
       
-      // Start the drag operation
+      // Start the drag operation immediately
       onEventMouseDown(event, e);
       
       // Clean up
@@ -93,40 +93,39 @@ const CalendarDayView = ({
 
   /**
    * Handle touch move
-   * Allow movement in any direction with minimal restrictions
+   * Only cancel long press on significant movement
    */
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     if (!touchStartPos || customDragState.isDragging) return;
-
-    // Get the total movement distance regardless of direction
+    
+    // Get touch movement
     const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.y);
     const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.x);
     const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     
     // Only cancel long press if there's significant movement
-    // Using a slightly higher threshold allows for natural hand shakiness
-    if (totalMovement > SCROLL_THRESHOLD * 1.5) {
+    if (totalMovement > SCROLL_THRESHOLD * 1.2) {
       clearPressTimer();
     }
   }, [touchStartPos, customDragState.isDragging, clearPressTimer]);
 
   /**
    * Handle touch end
-   * Manages state cleanup and potential click events
    */
   const handleTouchEnd = useCallback((event: KanbanEvent) => {
-    // Check if it was a tap that wasn't a drag start
+    // Only trigger click if it was a quick tap
     if (pressedEvent?.id === event.id && !customDragState.isDragging) {
+      if (onEventClick) onEventClick(event);
       clearPressTimer();
     }
-    // Always clear state regardless
+    
+    // Always clear state
     setPressedEvent(null);
     setTouchStartPos(null);
-  }, [clearPressTimer, pressedEvent, customDragState.isDragging]);
+  }, [clearPressTimer, pressedEvent, customDragState.isDragging, onEventClick]);
 
   /**
    * Handle touch cancel
-   * Cleans up any pending actions
    */
   const handleTouchCancel = useCallback(() => {
     clearPressTimer();
