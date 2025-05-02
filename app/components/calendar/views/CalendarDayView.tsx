@@ -327,9 +327,8 @@ const CalendarDayView = ({
                   isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
                   isDropTarget={false}
                   onClick={handleClick}
-                  onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
-                  onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
-                  onTouchEnd={() => handleTouchEnd(event)}
+                  onDragHandleMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
+                  onDragHandleTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
                 />
               </div>
             ))

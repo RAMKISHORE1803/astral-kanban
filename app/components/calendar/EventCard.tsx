@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from "framer-motion";
 import { cn } from "@/app/lib/utils";
-import { Clock, CalendarDays } from "lucide-react";
+import { Clock, CalendarDays, GripVertical } from "lucide-react";
 import type { KanbanEvent, EventCardProps as OriginalEventCardProps } from "@/app/types/calendar";
 
 // Simple hash function for color generation
@@ -33,6 +33,8 @@ const eventColors = [
 interface EventCardProps extends OriginalEventCardProps {
   showViewDetailsButton?: boolean;
   isCompact?: boolean; // New prop for compact mode in week view
+  onDragHandleMouseDown?: (e: React.MouseEvent) => void; // For the drag handle
+  onDragHandleTouchStart?: (e: React.TouchEvent) => void; // For the drag handle
 }
 
 const EventCard: React.FC<EventCardProps> = ({
@@ -47,7 +49,9 @@ const EventCard: React.FC<EventCardProps> = ({
   onMouseUp,
   onMouseLeave,
   onTouchStart,
-  onTouchEnd
+  onTouchEnd,
+  onDragHandleMouseDown,
+  onDragHandleTouchStart
 }) => {
   const colorIndex = simpleHash(event.id) % eventColors.length;
   const colorSet = eventColors[colorIndex];
@@ -69,7 +73,7 @@ const EventCard: React.FC<EventCardProps> = ({
     return (
       <motion.div
         className={cn(
-          "relative z-0 group bg-white rounded-md overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-1 hover:z-10",
+          "relative z-0 group bg-white rounded-md overflow-hidden cursor-default touch-manipulation mb-1 hover:z-10",
           "border border-slate-200 shadow-sm hover:shadow transition-all duration-150",
           "flex flex-col",
           "event-card",
@@ -78,11 +82,7 @@ const EventCard: React.FC<EventCardProps> = ({
         data-event-id={event.id}
         // In week view, clicking the card should open the detail
         onClick={onClick ? () => onClick(event) : undefined}
-        onMouseDown={onMouseDown}
-        onMouseUp={onMouseUp}
-        onMouseLeave={onMouseLeave}
-        onTouchStart={onTouchStart}
-        onTouchEnd={onTouchEnd}
+        // Don't attach mouse/touch events to the whole card for dragging anymore
         whileHover={{ y: -1 }}
         style={{
           touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
@@ -90,7 +90,7 @@ const EventCard: React.FC<EventCardProps> = ({
       >
         {/* Simplified content for week view */}
         <div className={cn(
-          "flex items-center px-2 py-1.5 gap-1.5",
+          "flex items-center px-2 py-1.5 gap-1.5 relative",
           colorSet.bg
         )}>
           {/* Left accent */}
@@ -106,6 +106,20 @@ const EventCard: React.FC<EventCardProps> = ({
               <span className="text-[10px] font-medium truncate">{event.time.toLowerCase()}</span>
             </div>
           </div>
+
+          {/* Drag handle button */}
+          <div 
+            className={cn(
+              "absolute right-0 top-0 bottom-0 flex items-center justify-center w-7 bg-gradient-to-l",
+              "from-slate-50/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity",
+              isDraggable && "cursor-grab active:cursor-grabbing"
+            )}
+            onMouseDown={onDragHandleMouseDown}
+            onTouchStart={onDragHandleTouchStart}
+            aria-label="Drag event"
+          >
+            <GripVertical size={14} className="text-slate-400" />
+          </div>
         </div>
       </motion.div>
     );
@@ -115,21 +129,16 @@ const EventCard: React.FC<EventCardProps> = ({
   return (
     <motion.div
       className={cn(
-        "relative z-0 group bg-white rounded-lg overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-2 hover:z-10",
+        "relative z-0 group bg-white rounded-lg overflow-hidden cursor-default touch-manipulation mb-2 hover:z-10",
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
-        isSource && !isDropTarget && "opacity-50 scale-[0.98] shadow-md", // Subtle scale and opacity for dragged card
+        isSource && !isDropTarget && "opacity-50 scale-[0.99]", // Subtle scale and opacity for dragged card
         isSource && "z-20" // Higher z-index for the source card when dragging
       )}
       data-event-id={event.id}
       // Don't attach onClick to the main div, only the button should open detail panel
-      onMouseDown={onMouseDown}
-      onMouseUp={onMouseUp}
-      onMouseLeave={onMouseLeave}
-      onTouchStart={onTouchStart}
-      onTouchEnd={onTouchEnd}
-      // Remove hover animation to avoid interference with drag
+      // Don't attach drag related events to the card itself
       whileHover={isDraggable ? undefined : { y: -2 }}
       // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
@@ -148,14 +157,47 @@ const EventCard: React.FC<EventCardProps> = ({
             draggable="false"
           />
           <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+          
+          {/* Drag handle in top right of image (if draggable) */}
+          {isDraggable && (
+            <div 
+              className={cn(
+                "absolute top-2 right-2 w-8 h-8 rounded-full bg-black/25 backdrop-blur-sm",
+                "flex items-center justify-center cursor-grab active:cursor-grabbing", 
+                "opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+              )}
+              onMouseDown={onDragHandleMouseDown}
+              onTouchStart={onDragHandleTouchStart}
+              aria-label="Drag event"
+            >
+              <GripVertical size={16} className="text-white" />
+            </div>
+          )}
         </div>
       )}
       
       {/* Content Section */}
       <div className={cn(
-        "flex flex-col p-3",
+        "flex flex-col p-3 relative", // Added relative for drag handle positioning
         colorSet.bg
       )}>
+        {/* Drag handle (only visible if no image) */}
+        {isDraggable && !event.imageUrl && (
+          <div 
+            className={cn(
+              "absolute top-2 right-2 w-6 h-6 rounded-full",
+              "flex items-center justify-center cursor-grab active:cursor-grabbing", 
+              "opacity-0 group-hover:opacity-100 transition-opacity duration-200",
+              "bg-slate-100"
+            )}
+            onMouseDown={onDragHandleMouseDown}
+            onTouchStart={onDragHandleTouchStart}
+            aria-label="Drag event"
+          >
+            <GripVertical size={14} className="text-slate-500" />
+          </div>
+        )}
+        
         {/* Title with left border accent */}
         <div className="flex items-start gap-2">
           <div className={cn("h-full w-1 rounded-full self-stretch", colorSet.border)}></div>

@@ -79,9 +79,10 @@ const Column = ({
                 <EventCard
                   event={event}
                   onClick={() => onEventClick(event)}
-                  onMouseDown={(e) => onEventMouseDown(event, e)}
                   isDraggable={true}
                   isCompact={true}
+                  onDragHandleMouseDown={(e) => onEventMouseDown(event, e)}
+                  onDragHandleTouchStart={(e) => onEventMouseDown(event, e)}
                 />
               </div>
             ))
