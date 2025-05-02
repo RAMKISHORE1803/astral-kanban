@@ -63,9 +63,13 @@ const CalendarDayView = ({
    * Starts long press timer for drag initiation
    */
   const handleTouchStart = useCallback((event: KanbanEvent, e: React.TouchEvent) => {
+    // Prevent any ongoing drags
     if (customDragState.isDragging) return;
     
     e.stopPropagation();
+    // Don't prevent default as it interferes with scrolling
+    
+    // Clear any existing timer
     clearPressTimer();
     setPressedEvent(event);
     
@@ -101,10 +105,12 @@ const CalendarDayView = ({
     // Get touch movement
     const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.y);
     const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.x);
+    
+    // Use a very small threshold to avoid accidental cancellations but still allow deliberate scrolling
     const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
     
-    // Only cancel long press if there's significant movement
-    if (totalMovement > SCROLL_THRESHOLD * 1.2) {
+    // Cancel long press only on significant movement to allow for slight finger movement
+    if (totalMovement > SCROLL_THRESHOLD * 1.5) {
       clearPressTimer();
     }
   }, [touchStartPos, customDragState.isDragging, clearPressTimer]);

@@ -955,17 +955,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       // Update visual position state immediately
       setCustomDragState(prev => ({ ...prev, position: { x: e.clientX, y: e.clientY } }));
       
-      // Ensure the overlay is updated without waiting for animation frame
-      if (globalDragTracking.activeOverlay) {
-        const cardElement = globalDragTracking.activeOverlay.querySelector('div');
-        if (cardElement) {
-          // Position so finger/cursor is at the right position
-          const posX = e.clientX - globalDragTracking.cursorOverlayPosition.x;
-          const posY = e.clientY - globalDragTracking.cursorOverlayPosition.y;
-          
-          // Direct DOM manipulation for immediate response
-          globalDragTracking.activeOverlay.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
-        }
+      // Use animation frame for overlay updates
+      if (globalDragTracking.activeOverlay && !globalDragTracking.animationFrame) {
+        globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
       }
       
       // Edge hover logic + Timer management

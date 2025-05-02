@@ -85,7 +85,7 @@ const EventCard: React.FC<EventCardProps> = ({
         onTouchEnd={onTouchEnd}
         whileHover={{ y: -1 }}
         style={{
-          touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
+          touchAction: isDraggable ? 'none' : 'auto', // Always use 'none' for draggable cards
         }}
       >
         {/* Simplified content for week view */}
@@ -134,7 +134,7 @@ const EventCard: React.FC<EventCardProps> = ({
       // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
       style={{
-        touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
+        touchAction: isDraggable ? 'none' : 'auto', // Always use 'none' for draggable cards to ensure long press works
         willChange: 'transform', // Hardware acceleration hint
       }}
     >
