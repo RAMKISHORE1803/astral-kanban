@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { format, startOfWeek, endOfWeek, eachDayOfInterval, addHours, addDays, subDays } from "date-fns";
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, addHours, addDays, subDays, parse } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import sampleEventsContent from "@/app/lib/eventData";
 import { useMediaQuery } from "@/app/lib/hooks/useMediaQuery";
@@ -19,6 +19,21 @@ const sampleDescriptions = Object.values(sampleEventsContent).flat().map(e => e.
 const sampleImages = Object.values(sampleEventsContent).flat().map(e => e.imageUrl);
 const getRandomElement = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
 
+// Helper function to sort events by time
+const sortEventsByTime = (events: KanbanEvent[]): KanbanEvent[] => {
+  return [...events].sort((a, b) => {
+    try {
+      // Parse the time strings like "08:30 AM" to Date objects for comparison
+      const timeA = parse(a.time, 'hh:mm a', new Date());
+      const timeB = parse(b.time, 'hh:mm a', new Date());
+      return timeA.getTime() - timeB.getTime();
+    } catch (e) {
+      // Fallback if parsing fails
+      return a.time.localeCompare(b.time);
+    }
+  });
+};
+
 // Modified global state to improve synchronization with React
 let globalDragTracking = {
   activeOverlay: null as HTMLDivElement | null,
@@ -34,7 +49,13 @@ let globalDragTracking = {
   inTransition: false, // Flag to prevent edge detection during transitions
   edgeDetectionEnabled: true, // Flag to control edge detection
   edgeHoldTimer: null as NodeJS.Timeout | null, // Renamed for clarity
-  isInEdgeZone: false, // NEW: Track if currently in *any* edge zone
+  isInEdgeZone: false, // Track if currently in *any* edge zone
+  dragInitiated: false, // Track if drag has been initiated
+  dragThreshold: 5, // Minimum pixel movement to initiate drag
+  initialPosition: { x: 0, y: 0 }, // Initial position for threshold calculation
+  inDesktopWeekView: false, // Track if we're in desktop week view
+  dropZoneElement: null as HTMLElement | null, // Store the current drop zone element
+  cursorOverlayPosition: { x: 0, y: 0 }, // Store the cursor position relative to the overlay
 };
 
 // Improved overlay update function that coordinates with React state
@@ -43,20 +64,43 @@ function updateGlobalOverlayPosition() {
   
   const { x, y } = globalDragTracking.currentPosition;
   
-  // Apply position with transform for better performance - center under finger
+  // Apply position with transform for better performance - center under finger or cursor
   if (globalDragTracking.activeOverlay) {
     const cardElement = globalDragTracking.activeOverlay.querySelector('div');
     if (cardElement) {
       const cardWidth = cardElement.offsetWidth;
       const cardHeight = cardElement.offsetHeight;
       
-      // Position so finger is at center of card
+      // Position so finger/cursor is at the right position
+      // Use cursor offset for mouse (desktop) interactions
+      const posX = x - globalDragTracking.cursorOverlayPosition.x;
+      const posY = y - globalDragTracking.cursorOverlayPosition.y;
+      
       globalDragTracking.activeOverlay.style.transform = 
-        `translate3d(${x - (cardWidth / 2)}px, ${y - (cardHeight / 2)}px, 0)`;
+        `translate3d(${posX}px, ${posY}px, 0)`;
     }
   }
 
-  // Edge detection logic with 1-second hold requirement
+  // Update the last detected column based on cursor position
+  if (globalDragTracking.isTracking && !globalDragTracking.inTransition) {
+    // Find column under cursor
+    const elementsAtPoint = document.elementsFromPoint(x, y);
+    const columnElement = elementsAtPoint.find(el => 
+      el.hasAttribute('data-date') || el.closest('[data-date]')
+    );
+    
+    if (columnElement) {
+      const dateAttr = columnElement.getAttribute('data-date') || 
+                       columnElement.closest('[data-date]')?.getAttribute('data-date');
+      if (dateAttr) {
+        globalDragTracking.lastDetectedColumn = dateAttr;
+        // Update the drop zone element
+        globalDragTracking.dropZoneElement = columnElement.closest('[data-date]') || columnElement;
+      }
+    }
+  }
+
+  // Edge detection logic with hold requirement
   if (globalDragTracking.isTracking && 
       !globalDragTracking.inTransition && 
       globalDragTracking.edgeDetectionEnabled) {
@@ -71,21 +115,18 @@ function updateGlobalOverlayPosition() {
       const currentlyAtEdge = atLeftEdge || atRightEdge;
       const edgeDirection = atLeftEdge ? 'left' : (atRightEdge ? 'right' : null);
 
-      // Log the state on each frame
-      // console.log(`[Edge Detection Frame] AtEdge: ${currentlyAtEdge}, IsInZone: ${globalDragTracking.isInEdgeZone}, TimerExists: ${!!globalDragTracking.edgeHoldTimer}`);
-
       // User entered an edge zone
       if (currentlyAtEdge && !globalDragTracking.isInEdgeZone && !globalDragTracking.edgeHoldTimer) {
-        console.log(`[Edge Detection] Entered edge zone: ${edgeDirection}. Starting ${EDGE_HOLD_DURATION}ms timer.`); // Combined logs
+        console.log(`[Edge Detection] Entered edge zone: ${edgeDirection}. Starting ${EDGE_HOLD_DURATION}ms timer.`);
         globalDragTracking.isInEdgeZone = true;
         
-        // Start the 1-second hold timer
+        // Start the hold timer
         globalDragTracking.edgeHoldTimer = setTimeout(() => {
           console.log("[Edge Timer Callback] Timer fired."); 
           
           // Timer completed. Check if STILL in an edge zone 
           const currentX = globalDragTracking.currentPosition.x;
-          const container = document.querySelector('.calendar-container'); // Re-get container in case of resize?
+          const container = document.querySelector('.calendar-container');
           if (container) {
               const containerRectNow = container.getBoundingClientRect();
               const edgeWidthNow = containerRectNow.width * EDGE_ZONE_WIDTH_PERCENTAGE;
@@ -117,7 +158,6 @@ function updateGlobalOverlayPosition() {
       else if (!currentlyAtEdge && globalDragTracking.isInEdgeZone) {
         console.log("[Edge Detection] Left edge zone (timer might still be running). Resetting isInEdgeZone flag.");
         globalDragTracking.isInEdgeZone = false;
-        // REMOVED: Clearing timer here
       }
     }
   }
@@ -137,8 +177,11 @@ function snapToPosition(targetX: number, targetY: number, onComplete: () => void
   const cardWidth = cardElement.offsetWidth;
   const cardHeight = cardElement.offsetHeight;
   
-  const startX = globalDragTracking.currentPosition.x - (cardWidth / 2);
-  const startY = globalDragTracking.currentPosition.y - (cardHeight / 2);
+  // Get computed style to find current transform
+  const style = window.getComputedStyle(globalDragTracking.activeOverlay);
+  const matrix = new DOMMatrix(style.transform);
+  const startX = matrix.m41; // translateX value
+  const startY = matrix.m42; // translateY value
   
   const startTime = performance.now();
   const duration = 300; // ms
@@ -194,14 +237,16 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     position: { x: number, y: number } | null;
     startedOn: string | null;
     currentlyHovering: 'left' | 'right' | null;
-    dropTargetId: string | null; // For reordering
+    dropTargetId: string | null; // No longer used for reordering, but keeping for compatibility
+    dragStartTime: number | null; // Track when drag started for threshold timing
   }>({
     isDragging: false,
     event: null,
     position: null,
     startedOn: null,
     currentlyHovering: null,
-    dropTargetId: null
+    dropTargetId: null,
+    dragStartTime: null
   });
   
   // Timer for edge transitions
@@ -237,13 +282,29 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   const edgeHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
   const edgeHoverDirectionRef = useRef<'left' | 'right' | null>(null);
 
+  // NEW: Refs for mouse drag state
+  const mouseStateRef = useRef({
+    mouseDownEvent: null as MouseEvent | null,
+    originalTargetRect: null as DOMRect | null,
+    originalEvent: null as KanbanEvent | null,
+    dragThresholdMet: false,
+    dragStarted: false
+  });
+
   // --- Computed Values --- 
   const effectiveView = isMobile ? "day" : view;
 
+  // Update global state about view
+  useEffect(() => {
+    globalDragTracking.inDesktopWeekView = !isMobile && view === "week";
+  }, [isMobile, view]);
+
+  // Get time-sorted events for each view
   const filteredEvents = useMemo(() => {
     if (effectiveView === "day") {
       const dateStr = format(currentDate, "yyyy-MM-dd");
-      return allEvents.filter(event => event.date === dateStr);
+      const dayEvents = allEvents.filter(event => event.date === dateStr);
+      return sortEventsByTime(dayEvents); // Sort day events by time
     } else { // effectiveView === "week"
       const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
       const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
@@ -255,15 +316,35 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     }
   }, [allEvents, currentDate, effectiveView]);
 
+  // Get time-sorted events by date for week view
   const eventsByDateForWeek = useMemo(() => {
     if (effectiveView !== "week") return {};
+    
     const grouped: { [date: string]: KanbanEvent[] } = {};
+    const weekStart = startOfWeek(currentDate, { weekStartsOn: 1 });
+    const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
+    
+    // First, ensure all dates in the week have an entry (even if empty)
+    eachDayOfInterval({ start: weekStart, end: weekEnd }).forEach(day => {
+      const dateStr = format(day, "yyyy-MM-dd");
+      grouped[dateStr] = [];
+    });
+    
+    // Then populate with events
     filteredEvents.forEach(event => {
-      if (!grouped[event.date]) { grouped[event.date] = []; }
+      if (!grouped[event.date]) { 
+        grouped[event.date] = []; 
+      }
       grouped[event.date].push(event);
     });
+    
+    // Sort events by time for each day
+    Object.keys(grouped).forEach(date => {
+      grouped[date] = sortEventsByTime(grouped[date]);
+    });
+    
     return grouped;
-  }, [filteredEvents, effectiveView]);
+  }, [filteredEvents, currentDate, effectiveView]);
 
   // --- Core Callbacks (Defined using useCallback) ---
 
@@ -291,6 +372,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     // Stop global tracking
     globalDragTracking.isTracking = false;
     globalDragTracking.dropPending = false;
+    globalDragTracking.dragInitiated = false;
     
     // Stop animation frame
     if (globalDragTracking.animationFrame) {
@@ -300,38 +382,14 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     
     const currentDateStr = format(currentDate, "yyyy-MM-dd");
     let targetDateStr = currentDateStr;
+    
+    // Use the last detected column from global tracking
     if (globalDragTracking.lastDetectedColumn) {
       targetDateStr = globalDragTracking.lastDetectedColumn;
+      console.log(`Using last detected column: ${targetDateStr}`);
     }
     
     const droppedEvent = customDragState.event;
-    let insertAt = -1;
-    
-    if (droppedEvent && customDragState.position) {
-      const { x, y } = customDragState.position;
-      const elementsAtPoint = document.elementsFromPoint(x, y);
-      const columnElement = elementsAtPoint.find(el => el.hasAttribute('data-date') || el.closest('[data-date]'));
-      if (columnElement) {
-        const dateAttr = columnElement.getAttribute('data-date') || columnElement.closest('[data-date]')?.getAttribute('data-date');
-        if (dateAttr) {
-          targetDateStr = dateAttr;
-          console.log(`Detected drop in column with date: ${targetDateStr}`);
-        }
-      }
-      
-      const eventCardElement = elementsAtPoint.find(el => el.classList.contains('event-card') || el.closest('.event-card'));
-      if (eventCardElement) {
-        const eventCard = eventCardElement.classList.contains('event-card') ? eventCardElement : eventCardElement.closest('.event-card');
-        const targetEventId = eventCard?.getAttribute('data-event-id');
-      if (targetEventId) {
-          const eventsInColumn = allEvents.filter(e => e.date === targetDateStr);
-          const targetIndex = eventsInColumn.findIndex(e => e.id === targetEventId);
-          if (targetIndex !== -1) {
-            insertAt = targetIndex;
-          }
-        }
-      }
-    }
     
     console.log(`Moving event "${droppedEvent.title}" to ${targetDateStr}`);
     
@@ -339,20 +397,23 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     reactSyncRef.current.lastStateUpdate = Date.now();
     
     flushSync(() => {
+      // Update the event with new date
       const eventsWithoutDragged = allEvents.filter(e => e.id !== droppedEvent.id);
       const updatedEvent = { ...droppedEvent, date: targetDateStr };
-      const dateEvents = eventsWithoutDragged.filter(e => e.date === targetDateStr);
       
-      if (insertAt === -1) {
-        setAllEvents([...eventsWithoutDragged, updatedEvent]);
-      } else {
-        const newDateEvents = [...dateEvents];
-        newDateEvents.splice(insertAt, 0, updatedEvent);
-        setAllEvents([...eventsWithoutDragged.filter(e => e.date !== targetDateStr), ...newDateEvents]);
-      }
+      // Add back to the events array
+      const newEvents = [...eventsWithoutDragged, updatedEvent];
+      setAllEvents(newEvents);
       
+      // Reset drag state
       setCustomDragState({
-        isDragging: false, event: null, position: null, startedOn: null, currentlyHovering: null, dropTargetId: null
+        isDragging: false, 
+        event: null, 
+        position: null, 
+        startedOn: null, 
+        currentlyHovering: null, 
+        dropTargetId: null,
+        dragStartTime: null
       });
     });
     
@@ -460,7 +521,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
 
       if (globalDragTracking.dropPending) {
         console.log("Processing delayed drop after transition");
-      finalizeCustomDrag();
+        finalizeCustomDrag();
         return;
       }
       
@@ -478,17 +539,19 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     }, 300);
   }, [customDragState, currentDate, onDateChange, finalizeCustomDrag]);
 
-  const startCustomDrag = useCallback((event: KanbanEvent, clientX: number, clientY: number) => {
+  const startCustomDrag = useCallback((event: KanbanEvent, clientX: number, clientY: number, targetElement?: HTMLElement) => {
+    // Reset state
     dayOffsetRef.current = 0;
     isTransitioningRef.current = false;
     globalDragTracking.inTransition = false;
     globalDragTracking.synchronizingWithReact = false;
     globalDragTracking.dropPending = false;
     globalDragTracking.lastDetectedColumn = event.date;
+    globalDragTracking.initialPosition = { x: clientX, y: clientY };
+    globalDragTracking.dragInitiated = true;
     
     // Reset edge detection state
     globalDragTracking.edgeDetectionEnabled = true;
-    // Clear edge timer state on new drag start
     if (edgeHoldTimerRef.current) { 
       clearTimeout(edgeHoldTimerRef.current);
       edgeHoldTimerRef.current = null;
@@ -517,20 +580,35 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       globalDragTracking.activeOverlay.innerHTML = eventCardHtml;
       globalDragTracking.activeOverlay.style.display = 'block';
       
-      const originalCard = document.querySelector(`[data-event-id="${event.id}"]`);
+      // Find the original card element if not provided
+      const originalCard = targetElement || document.querySelector(`[data-event-id="${event.id}"]`);
+      
       if (originalCard) {
         const originalRect = originalCard.getBoundingClientRect();
         globalDragTracking.targetElement = originalCard as HTMLElement;
+        
+        // Calculate cursor position relative to card for more accurate dragging
+        // This is especially important for mouse dragging (desktop)
+        const cursorOffsetX = clientX - originalRect.left;
+        const cursorOffsetY = clientY - originalRect.top;
+        
+        // Store the cursor position relative to the overlay for future updates
+        globalDragTracking.cursorOverlayPosition = { x: cursorOffsetX, y: cursorOffsetY };
+        
+        // Position overlay at original card position first
         globalDragTracking.activeOverlay.style.transform = `translate3d(${originalRect.left}px, ${originalRect.top}px, 0)`;
+        
+        // Then animate to cursor position
         setTimeout(() => {
           if (globalDragTracking.activeOverlay) {
             globalDragTracking.activeOverlay.style.transition = 'transform 0.15s cubic-bezier(0.4, 0, 0.2, 1)';
-            const cardElement = globalDragTracking.activeOverlay.querySelector('div');
-            if (cardElement) {
-              const cardWidth = cardElement.offsetWidth;
-              const cardHeight = cardElement.offsetHeight;
-              globalDragTracking.activeOverlay.style.transform = `translate3d(${clientX - (cardWidth / 2)}px, ${clientY - (cardHeight / 2)}px, 0)`;
-            }
+            
+            // Calculate position based on cursor offset
+            const posX = clientX - cursorOffsetX;
+            const posY = clientY - cursorOffsetY;
+            
+            globalDragTracking.activeOverlay.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
+            
             setTimeout(() => {
               if (globalDragTracking.activeOverlay) {
                 globalDragTracking.activeOverlay.style.transition = 'none';
@@ -540,39 +618,84 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
             }, 150);
           }
         }, 0);
-    } else {
+      } else {
+        // Fallback if original card not found
         const cardElement = globalDragTracking.activeOverlay?.querySelector('div');
         if (cardElement) {
           const cardWidth = cardElement.offsetWidth;
           const cardHeight = cardElement.offsetHeight;
+          
+          // Default to center positioning if we can't find the original
+          globalDragTracking.cursorOverlayPosition = { 
+            x: cardWidth / 2, 
+            y: cardHeight / 2 
+          };
+          
           globalDragTracking.activeOverlay.style.transform = `translate3d(${clientX - (cardWidth / 2)}px, ${clientY - (cardHeight / 2)}px, 0)`;
         }
         if (globalDragTracking.animationFrame) cancelAnimationFrame(globalDragTracking.animationFrame);
         globalDragTracking.animationFrame = requestAnimationFrame(updateGlobalOverlayPosition);
       }
+      
+      // Provide haptic feedback
       if (navigator.vibrate) navigator.vibrate([15, 10, 15]);
     }
     
+    // Update React state
     setCustomDragState({
-      isDragging: true, event: event, position: { x: clientX, y: clientY }, startedOn: event.date, currentlyHovering: null, dropTargetId: null
+      isDragging: true, 
+      event: event, 
+      position: { x: clientX, y: clientY }, 
+      startedOn: event.date, 
+      currentlyHovering: null, 
+      dropTargetId: null,
+      dragStartTime: Date.now()
     });
+    
+    // Disable page scrolling during drag
     document.body.style.overflow = 'hidden';
     document.body.classList.add('calendar-dragging');
+    
     console.log("Drag started ...", clientX, clientY);
   }, []);
 
+  // Improved mouse event handlers specifically for desktop dragging
   const handleEventMouseDown = useCallback((event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => {
-    if (!('touches' in e)) e.preventDefault(); 
-    e.stopPropagation();
-    const clientX = 'touches' in e ? e.touches[0].clientX : (e as React.MouseEvent).clientX;
-    const clientY = 'touches' in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
-    console.log("Starting drag at", clientX, clientY);
-    startCustomDrag(event, clientX, clientY);
+    if ('touches' in e) {
+      // Touch event handling (mobile)
+      e.stopPropagation();
+      const clientX = e.touches[0].clientX;
+      const clientY = e.touches[0].clientY;
+      console.log("Starting touch drag at", clientX, clientY);
+      startCustomDrag(event, clientX, clientY, e.currentTarget as HTMLElement);
+    } else {
+      // Mouse event handling (desktop)
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Store the initial state for potential drag
+      const mouseEvent = e.nativeEvent as MouseEvent;
+      mouseStateRef.current = {
+        mouseDownEvent: mouseEvent,
+        originalTargetRect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
+        originalEvent: event,
+        dragThresholdMet: false,
+        dragStarted: false
+      };
+      
+      console.log("Mouse down on event, waiting for drag threshold");
+      
+      // We'll initiate the actual drag in the mousemove handler once threshold is met
+    }
   }, [startCustomDrag]);
 
   // --- Event Detail Modal Handlers (Simplified) --- 
   const handleEventCardClick = useCallback((event: KanbanEvent, cardElement: HTMLElement) => {
     if (customDragState.isDragging) return;
+    
+    // If we've moved the mouse, it's a drag attempt, not a click
+    if (mouseStateRef.current.dragThresholdMet) return;
+    
     const rect = cardElement.getBoundingClientRect();
     // Set combined modal data state
     setModalData({ 
@@ -591,6 +714,10 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   // handleEventClick uses the simplified handlers
   const handleEventClick = useCallback((event: KanbanEvent, cardElement?: HTMLElement) => {
      if (customDragState.isDragging) return;
+     
+     // If we've moved the mouse, it's a drag attempt, not a click
+     if (mouseStateRef.current.dragThresholdMet) return;
+     
      let element = cardElement;
      if (!element) {
        element = document.querySelector(`[data-event-id="${event.id}"]`) as HTMLElement;
@@ -609,6 +736,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     console.log("Cancelling drag (e.g., Escape key)");
     // Stop global tracking immediately
     globalDragTracking.isTracking = false;
+    globalDragTracking.dragInitiated = false;
+    
     if (globalDragTracking.animationFrame) {
       cancelAnimationFrame(globalDragTracking.animationFrame);
       globalDragTracking.animationFrame = null;
@@ -626,7 +755,25 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       }, 200);
     }
     // Reset React state
-    setCustomDragState({ isDragging: false, event: null, position: null, startedOn: null, currentlyHovering: null, dropTargetId: null });
+    setCustomDragState({ 
+      isDragging: false, 
+      event: null, 
+      position: null, 
+      startedOn: null, 
+      currentlyHovering: null, 
+      dropTargetId: null,
+      dragStartTime: null
+    });
+    
+    // Reset mouse state
+    mouseStateRef.current = {
+      mouseDownEvent: null,
+      originalTargetRect: null,
+      originalEvent: null,
+      dragThresholdMet: false,
+      dragStarted: false
+    };
+    
     // Reset global flags
     globalDragTracking.inTransition = false;
     globalDragTracking.dropPending = false;
@@ -649,10 +796,24 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     globalDragTracking.isInEdgeZone = false;
   }, [customDragState.isDragging]); // Dependency on isDragging ensures latest state
 
-  // --- UseEffect Hooks (Restored Order) ---
+  // Handle keyboard events (e.g., Escape to cancel drag)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && customDragState.isDragging) {
+        cancelCustomDrag();
+      }
+    };
+    
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [cancelCustomDrag, customDragState.isDragging]);
+
+  // --- UseEffect Hooks --- 
 
   useEffect(() => {
-    // ... (Overlay initialization logic - from previous restore) ...
+    // Overlay initialization logic
     const createOverlay = () => {
       if (globalDragTracking.activeOverlay) {
         try { document.body.removeChild(globalDragTracking.activeOverlay); } catch (e) {}
@@ -660,13 +821,24 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       if (globalDragTracking.animationFrame) cancelAnimationFrame(globalDragTracking.animationFrame);
       const overlayDiv = document.createElement('div');
       overlayDiv.id = 'global-drag-overlay';
-      Object.assign(overlayDiv.style, { position: 'fixed', pointerEvents: 'none', zIndex: '9999', top: '0', left: '0', display: 'none', transformOrigin: 'center center', willChange: 'transform', backfaceVisibility: 'hidden' });
+      Object.assign(overlayDiv.style, { 
+        position: 'fixed', 
+        pointerEvents: 'none', 
+        zIndex: '9999', 
+        top: '0', 
+        left: '0', 
+        display: 'none', 
+        transformOrigin: 'center center', 
+        willChange: 'transform', 
+        backfaceVisibility: 'hidden' 
+      });
       overlayDiv.setAttribute('aria-hidden', 'true');
       document.body.appendChild(overlayDiv);
       globalDragTracking.activeOverlay = overlayDiv;
       globalDragTracking.isTracking = false;
     };
     createOverlay();
+    
     const globalPointerMove = (e: PointerEvent) => {
       if (globalDragTracking.isTracking) {
         globalDragTracking.currentPosition = { x: e.clientX, y: e.clientY };
@@ -675,7 +847,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         }
       }
     };
+    
     document.addEventListener('pointermove', globalPointerMove, { passive: true });
+    
     return () => {
       document.removeEventListener('pointermove', globalPointerMove);
       if (globalDragTracking.animationFrame) cancelAnimationFrame(globalDragTracking.animationFrame);
@@ -686,6 +860,84 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       globalDragTracking.isTracking = false;
     };
   }, []);
+  
+  // Specifically handle mouse events for drag initiation and tracking
+  useEffect(() => {
+    // This handler initiates drag after threshold is met
+    const handleMouseMove = (e: MouseEvent) => {
+      // If no mouse down event, we're not tracking
+      if (!mouseStateRef.current.mouseDownEvent || mouseStateRef.current.dragStarted) return;
+      
+      // Calculate distance moved
+      const initialX = mouseStateRef.current.mouseDownEvent.clientX;
+      const initialY = mouseStateRef.current.mouseDownEvent.clientY;
+      const deltaX = e.clientX - initialX;
+      const deltaY = e.clientY - initialY;
+      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      
+      // Check if we've met the drag threshold
+      if (distance >= globalDragTracking.dragThreshold) {
+        mouseStateRef.current.dragThresholdMet = true;
+        
+        // Only start drag if not already started
+        if (!mouseStateRef.current.dragStarted && mouseStateRef.current.originalEvent) {
+          mouseStateRef.current.dragStarted = true;
+          console.log("Mouse drag threshold met. Starting drag.");
+          
+          // Start the drag
+          startCustomDrag(
+            mouseStateRef.current.originalEvent, 
+            e.clientX, 
+            e.clientY,
+            mouseStateRef.current.mouseDownEvent.target as HTMLElement
+          );
+        }
+      }
+    };
+    
+    // This handler finalizes the drag on mouse up
+    const handleMouseUp = (e: MouseEvent) => {
+      // If drag threshold was met, finalize the drag
+      if (mouseStateRef.current.dragThresholdMet && customDragState.isDragging) {
+        console.log("Mouse up after drag. Finalizing.");
+        finalizeCustomDrag();
+      }
+      
+      // Reset mouse state
+      mouseStateRef.current = {
+        mouseDownEvent: null,
+        originalTargetRect: null,
+        originalEvent: null,
+        dragThresholdMet: false,
+        dragStarted: false
+      };
+    };
+    
+    // This handler cancels the drag tracking on mouse leave
+    const handleMouseLeave = (e: MouseEvent) => {
+      // Only reset tracking state, don't cancel active drags
+      if (!customDragState.isDragging) {
+        mouseStateRef.current = {
+          mouseDownEvent: null,
+          originalTargetRect: null,
+          originalEvent: null,
+          dragThresholdMet: false,
+          dragStarted: false
+        };
+      }
+    };
+    
+    // Add global mouse event listeners
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseleave', handleMouseLeave);
+    
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [customDragState.isDragging, finalizeCustomDrag, startCustomDrag]);
   
   useEffect(() => {
     if (!customDragState.isDragging) return;
@@ -772,9 +1024,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
                       }, EDGE_HOLD_DURATION);
                   }
               }
-
-              // Drop target detection (remains the same)
-              // ... (code to find drop target elements) ...
           }
       }
     };
@@ -795,9 +1044,13 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         globalDragTracking.dropPending = true;
         return;
       }
-      console.log("%cFinalizing drag immediately on pointer event:", "color: green;", e.type);
-      if (finalizeCustomDragRef.current) {
-          finalizeCustomDragRef.current(); 
+      
+      // Only finalize for touch events - mouse events are handled separately
+      if (e.pointerType === 'touch') {
+        console.log("%cFinalizing drag immediately on pointer event:", "color: green;", e.type);
+        if (finalizeCustomDragRef.current) {
+            finalizeCustomDragRef.current(); 
+        }
       }
     };
     
@@ -835,8 +1088,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     prevDateAnimRef.current = { ...prevDateAnimRef.current, date: currentDate };
   }, [currentDate]);
   
+  // Generate random events when component mounts
   useEffect(() => {
-    // ... (Mock event generation logic) ...
     const generatedEvents: KanbanEvent[] = [];
     const initialWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
     const initialWeekEnd = endOfWeek(new Date(), { weekStartsOn: 1 });
@@ -921,9 +1174,22 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         customDragState.isDragging && "touch-none"
       )}
     >
-      {/* Status indicator */}
-      {customDragState.isDragging && isTransitioningRef.current && (
-        <div className="fixed top-0 left-0 right-0 z-[9999] bg-blue-500 h-1 animate-pulse"></div>
+      {/* Status indicator for drag operation */}
+      {customDragState.isDragging && (
+        <div className="fixed top-0 left-0 right-0 z-[9999] bg-blue-500 h-1 animate-pulse" 
+             aria-hidden="true"
+        ></div>
+      )}
+      
+      {/* Visual indicator for desktop drag operation */}
+      {customDragState.isDragging && globalDragTracking.inDesktopWeekView && (
+        <div 
+          className="fixed bottom-4 left-1/2 transform -translate-x-1/2 z-[9999] bg-slate-800 text-white px-4 py-2 rounded-full text-sm font-medium shadow-lg"
+          style={{ pointerEvents: 'none' }}
+          aria-hidden="true"
+        >
+          Drop to move event
+        </div>
       )}
       
       <AnimatePresence 
@@ -966,7 +1232,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         </motion.div>
       </AnimatePresence>
 
-      {/* RENDER THE NEW MODAL COMPONENT with simplified props */}
+      {/* Event Detail Modal Component */}
       <EventDetailModal 
         event={modalData?.event ?? null} // Pass event from modalData
         isOpen={!!modalData} // Modal is open if modalData is not null

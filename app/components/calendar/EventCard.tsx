@@ -55,7 +55,7 @@ const EventCard: React.FC<EventCardProps> = ({
       )}
       data-event-id={event.id}
       onClick={(e) => {
-        onClick(event);
+          onClick(event);
       }}
       onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
