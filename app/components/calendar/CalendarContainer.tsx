@@ -541,30 +541,27 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
 
   const startCustomDrag = useCallback((event: KanbanEvent, clientX: number, clientY: number, targetElement?: HTMLElement) => {
     // Reset state
-    dayOffsetRef.current = 0;
-    isTransitioningRef.current = false;
-    globalDragTracking.inTransition = false;
-    globalDragTracking.synchronizingWithReact = false;
-    globalDragTracking.dropPending = false;
-    globalDragTracking.lastDetectedColumn = event.date;
-    globalDragTracking.initialPosition = { x: clientX, y: clientY };
-    globalDragTracking.dragInitiated = true;
     
-    // Reset edge detection state
-    globalDragTracking.edgeDetectionEnabled = true;
-    if (edgeHoldTimerRef.current) { 
-      clearTimeout(edgeHoldTimerRef.current);
-      edgeHoldTimerRef.current = null;
+    // Ensure we're not already in a drag operation
+    if (customDragState.isDragging) {
+      console.log("Already dragging - ignoring drag start");
+      return;
     }
-    edgeHoverDirectionRef.current = null;
     
+    console.log("Starting drag for:", event.title);
+    globalDragTracking.dragInitiated = true;
     globalDragTracking.isTracking = true;
     globalDragTracking.currentPosition = { x: clientX, y: clientY };
-
+    globalDragTracking.initialPosition = { x: clientX, y: clientY };
+    
+    // Store the current date
+    reactSyncRef.current.targetDateAfterTransition = null;
+    
+    // Create a clone of the original card for the overlay
     if (globalDragTracking.activeOverlay) {
       globalDragTracking.activeOverlay.innerHTML = '';
       const eventCardHtml = `
-        <div class="bg-white rounded-lg border border-slate-200 shadow-lg p-3" style="width: auto; max-width: 320px; transform: scale(1.05); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25); will-change: transform; backface-visibility: hidden;">
+        <div class="bg-white rounded-lg border border-slate-200 shadow-lg p-3" style="width: auto; max-width: 320px; transform: scale(1.05); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25); will-change: transform; backface-visibility: hidden; touch-action: none;">
           <div class="flex justify-between items-start mb-2">
             <h3 class="font-medium text-slate-800">${event.title}</h3>
             <span class="text-xs text-slate-500">${event.time}</span>
@@ -827,7 +824,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         transformOrigin: 'center center', 
         willChange: 'transform', 
         backfaceVisibility: 'hidden',
-        transition: 'none' // Ensure no transitions to make movement instant and fluid
+        transition: 'none', // Ensure no transitions to make movement instant and fluid
+        touchAction: 'none' // Disable browser touch actions for the overlay
       });
       overlayDiv.setAttribute('aria-hidden', 'true');
       document.body.appendChild(overlayDiv);
@@ -1183,6 +1181,20 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     center: { opacity: 1 },
     exit: { opacity: 0 },
   };
+
+  // Add an effect to ensure touch events are handled correctly
+  useEffect(() => {
+    if (!customDragState.isDragging) return;
+    
+    // Force body to have touch-action: none during drag
+    const originalTouchAction = document.body.style.touchAction;
+    document.body.style.touchAction = 'none';
+    
+    return () => {
+      // Restore original touch action when drag ends
+      document.body.style.touchAction = originalTouchAction;
+    };
+  }, [customDragState.isDragging]);
 
   return (
     <div

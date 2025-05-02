@@ -75,7 +75,28 @@ const CalendarDayView = ({
       y: e.touches[0].clientY
     });
     
-    // Start long press timer for drag initiation
+    // Check if the touch event came from a drag handle
+    // If from a drag handle, start dragging immediately without delay
+    const target = e.target as HTMLElement;
+    const isDragHandle = target.closest('[aria-label="Drag event"]');
+    
+    if (isDragHandle) {
+      // Immediate drag initiation when using the handle
+      // Trigger vibration for feedback
+      if (window.navigator && window.navigator.vibrate) {
+        window.navigator.vibrate(50);
+      }
+      
+      // Start dragging immediately
+      onEventMouseDown(event, e);
+      
+      // Clean up
+      setPressedEvent(null);
+      setTouchStartPos(null);
+      return;
+    }
+    
+    // For non-handle touches, use the existing long-press behavior
     pressTimerRef.current = setTimeout(() => {
       // Trigger vibration if available (for tactile feedback)
       if (window.navigator && window.navigator.vibrate) {

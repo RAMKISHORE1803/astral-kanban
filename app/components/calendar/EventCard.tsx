@@ -84,6 +84,7 @@ const EventCard: React.FC<EventCardProps> = ({
   const handleDragHandleTouchStart = (e: React.TouchEvent) => {
     // Make sure to capture the event properly
     e.stopPropagation();
+    e.preventDefault(); // Add preventDefault to stop any default touch behavior
     
     if (onDragHandleTouchStart) {
       // Pass the event through for dragging
@@ -138,6 +139,7 @@ const EventCard: React.FC<EventCardProps> = ({
             )}
             onMouseDown={handleDragHandleMouseDown}
             onTouchStart={handleDragHandleTouchStart}
+            style={{ touchAction: 'none' }} // Force disable browser touch actions on the handle
             aria-label="Drag event"
           >
             <GripVertical size={16} className="text-slate-600" />
@@ -189,6 +191,7 @@ const EventCard: React.FC<EventCardProps> = ({
               )}
               onMouseDown={handleDragHandleMouseDown}
               onTouchStart={handleDragHandleTouchStart}
+              style={{ touchAction: 'none' }} // Force disable browser touch actions on the handle
               aria-label="Drag event"
             >
               <GripVertical size={18} className="text-white" />
@@ -211,6 +214,7 @@ const EventCard: React.FC<EventCardProps> = ({
             )}
             onMouseDown={handleDragHandleMouseDown}
             onTouchStart={handleDragHandleTouchStart}
+            style={{ touchAction: 'none' }} // Force disable browser touch actions on the handle
             aria-label="Drag event"
           >
             <GripVertical size={16} className="text-slate-500" />
