@@ -4,7 +4,7 @@ import { format, isSameDay, startOfWeek, endOfWeek, eachDayOfInterval } from "da
 import { cn } from "@/app/lib/utils";
 import { useState, useEffect } from "react";
 import EventCard from "../EventCard";
-import type { KanbanEvent, CalendarWeekViewProps, ColumnProps, CustomDragState } from "@/app/types/calendar";
+import type { CalendarWeekViewProps, ColumnProps } from "@/app/types/calendar";
 
 // Column component for each day
 const Column = ({
@@ -57,8 +57,7 @@ const Column = ({
           "relative"
         )}
         style={{
-          // Ensure height is calculated correctly for scrolling
-          height: "calc(100% - 65px)", // Subtract header height
+          height: "calc(100% - 65px)", 
           maxHeight: "calc(100% - 65px)",
         }}
       >

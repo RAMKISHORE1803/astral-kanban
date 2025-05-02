@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { format, startOfWeek, endOfWeek, eachDayOfInterval, addHours, addDays, subDays, parse } from "date-fns";
-import { motion, AnimatePresence } from "framer-motion";
 import sampleEventsContent from "@/app/lib/eventData";
 import { useMediaQuery } from "@/app/lib/hooks/useMediaQuery";
 import { cn } from "@/app/lib/utils";
@@ -1177,9 +1176,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     center: { opacity: 1 },
     exit: { opacity: 0 },
   };
-
-  // Debug log for dragging state
-  console.log("CalendarContainer render - isDragging:", customDragState.isDragging);
 
   return (
     <div

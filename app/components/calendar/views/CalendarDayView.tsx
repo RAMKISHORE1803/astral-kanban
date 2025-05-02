@@ -7,7 +7,6 @@ import EventCard from "../EventCard";
 import { cn } from "@/app/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { KanbanEvent, CalendarDayViewProps, CustomDragState, DebugInfo } from "@/app/types/calendar";
-import { ScrollArea } from "@/components/ui/scroll-area"; // Import ScrollArea
 
 // Constants
 const SCROLL_THRESHOLD = 10; // pixels of vertical movement to detect scroll intent
@@ -409,17 +408,29 @@ const CalendarDayView = ({
         </h3>
       </div>
 
-      {/* Wrapper for content */}
-      <div className="flex-1 flex overflow-hidden h-full">
+      {/* Wrapper for content and custom scrollbar */}
+      <div className="flex-1 flex overflow-hidden relative h-full">
 
-        {/* Use ScrollArea component */}
-        <ScrollArea className="max-h-[80vh] w-full flex-1 border-2 border-red-500"> {/* Apply height/width/flex */} 
+        {/* Main content container - scrollable */}
+        <div 
+          ref={contentRef}
+          className={cn(
+            "px-4 py-4 overflow-y-auto flex-1 calendar-day-view-content max-h-[85vh]",
+            "min-h-0", // Allow shrinking below content size
+            isEdgeHovering && "opacity-90 transition-opacity duration-200" // Fade content during edge hovering
+          )}
+          style={{
+            overscrollBehavior: 'contain', // Prevent pull-to-refresh on iOS
+            touchAction: customDragState.isDragging ? 'none' : 'auto', // Changed pan-y to auto when not dragging
+          }}
+          onScroll={handleScroll} // Re-enabled scroll listener
+        >
           {dayEvents.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-400 px-4 py-4"> {/* Added padding here */} 
+            <div className="flex items-center justify-center h-full text-gray-400">
               No events for this day
             </div>
           ) : (
-            <div className="space-y-3 relative pb-10 px-4 py-4"> {/* Added padding here */}
+            <div className="space-y-3 relative pb-10">
               {dayEvents.map((event) => (
                 <div
                   key={event.id}
@@ -443,8 +454,8 @@ const CalendarDayView = ({
               <div className="h-10"></div>
             </div>
           )}
-        </ScrollArea> {/* End ScrollArea */} 
- 
+        </div>
+        
         {/* Scroll indicator tip - appears briefly when user first views the list */}
         {dayEvents.length > 3 && (
           <div className="scroll-indicator">
@@ -452,31 +463,28 @@ const CalendarDayView = ({
           </div>
         )}
 
-        {/* Custom Scrollbar Area - Now sibling to content, adjust absolute positioning relative to main container */}
+        {/* Custom Scrollbar Area - Re-enabled */}
         {scrollThumbState.isVisible && (
-          <div className="absolute top-16 right-0 bottom-0 w-2.5 flex justify-center py-1 pointer-events-none z-20"> {/* Adjusted top, added z-index */} 
-            <div
-              className="relative w-1.5 h-[calc(100%-4rem)] bg-yellow-400 rounded-full" // TEMP - Track style, adjust height based on top offset
-            >
-              {/* Scroll Thumb */}
-              <div
-                 className={cn(
-                   "absolute left-0 w-full bg-red-500 rounded-full cursor-grab active:cursor-grabbing", // TEMP - Thumb style
-                   "transition-opacity duration-200",
-                   (scrollThumbState.isScrolling || isThumbDragging) ? "opacity-70" : "opacity-50 hover:opacity-70", // Fade slightly when not active
-                   "pointer-events-auto" // Make thumb interactive
-                 )}
-                 style={{
-                   height: `${scrollThumbState.thumbHeight}px`,
-                   top: `${scrollThumbState.thumbTop}px`,
-                 }}
-                 onMouseDown={handleThumbMouseDown}
-                 onTouchStart={handleThumbTouchStart}
-               />
-            </div>
-          </div>
+           <div className="absolute top-16 left-0 bottom-0 w-3 flex justify-center py-1 pointer-events-none z-20 bg-slate-100/50 rounded-r-lg">
+             <div
+                className={cn(
+                  "absolute left-0 w-full bg-slate-400 rounded-full cursor-grab active:cursor-grabbing",
+                  "transition-all duration-150",
+                  (scrollThumbState.isScrolling || isThumbDragging) 
+                    ? "bg-slate-500 opacity-90 scale-105" 
+                    : "opacity-70 hover:opacity-90 hover:bg-slate-500 hover:scale-105",
+                  "pointer-events-auto"
+                )}
+                style={{
+                  height: `${scrollThumbState.thumbHeight}px`,
+                  top: `${scrollThumbState.thumbTop}px`,
+                }}
+                onMouseDown={handleThumbMouseDown}
+                onTouchStart={handleThumbTouchStart}
+              />
+           </div>
         )}
-      </div> {/* End wrapper for content */} 
+      </div> {/* End Main content container */} 
     </div>
   );
 };
