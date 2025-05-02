@@ -11,7 +11,110 @@
   
   body {
     @apply bg-astral-white text-slate-800;
+    /* Enable better perspective handling globally */
+    perspective: 1200px;
+    transform-style: preserve-3d;
+    overflow-x: hidden; /* Prevent horizontal overflow */
   }
+  
+  /* Enhanced 3D transitions for day view */
+  .day-transition-container {
+    perspective: 1200px;
+    transform-style: preserve-3d;
+    overflow: hidden;
+    min-height: 100%;
+    position: relative;
+    background-color: white; /* Ensure there's always a background */
+  }
+  
+  /* Glass-like effect for sliding transitions */
+  .glass-effect {
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    background-color: rgba(255, 255, 255, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+  }
+  
+  /* Better 3D rendering */
+  .will-change-transform {
+    will-change: transform, opacity;
+    transform: translateZ(0);
+    backface-visibility: visible; /* Change to visible to ensure content doesn't disappear */
+    -webkit-backface-visibility: visible;
+  }
+  
+  /* Make the animation performance better */
+  .calendar-day-view {
+    isolation: isolate; /* Create a new stacking context */
+    contain: paint; /* Improve paint performance */
+  }
+  
+  /* Ensure content is visible during transitions */
+  .motion-div-container {
+    min-height: 100%;
+    background-color: white;
+    transform-style: flat; /* Use flat for better cross-browser stability */
+  }
+  
+  /* Day animation keyframes */
+  @keyframes day-slide-in-left {
+    from { transform: translateX(-100%) rotateY(5deg); opacity: 0.8; }
+    to { transform: translateX(0) rotateY(0); opacity: 1; }
+  }
+  
+  @keyframes day-slide-in-right {
+    from { transform: translateX(100%) rotateY(-5deg); opacity: 0.8; }
+    to { transform: translateX(0) rotateY(0); opacity: 1; }
+  }
+  
+  @keyframes day-slide-out-left {
+    from { transform: translateX(0) rotateY(0); opacity: 1; }
+    to { transform: translateX(-30%) rotateY(5deg); opacity: 0.5; }
+  }
+  
+  @keyframes day-slide-out-right {
+    from { transform: translateX(0) rotateY(0); opacity: 1; }
+    to { transform: translateX(30%) rotateY(-5deg); opacity: 0.5; }
+  }
+  
+  /* Make shadows more dramatic in transitions */
+  .transition-shadow {
+    transition: box-shadow 0.3s ease;
+  }
+  
+  .shadow-transition-in {
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  }
+  
+  .shadow-transition-out {
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+  }
+  
+  /* Container styles to address blank screen issues */
+  .calendar-container {
+    isolation: isolate;
+    background-color: white;
+    contain: content;
+  }
+  
+  /* Prevent blank screens during transitions */
+  body.transitioning-day {
+    background-color: white; /* Force white background during transitions */
+  }
+  
+  body.transitioning-day .calendar-container {
+    background-color: white;
+  }
+  
+  body.transitioning-day .calendar-day-view {
+    background-color: white;
+  }
+  
+  /* Ensure content always has a background during transitions */
+  .AnimatePresence > * {
+    background-color: white;
+  }
+  
   :root {
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;

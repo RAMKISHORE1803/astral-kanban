@@ -11,6 +11,7 @@ import { flushSync } from "react-dom";
 import EventDetailModal from "./EventDetailModal";
 import type { KanbanEvent, ModalData, CustomDragState, OriginRect, DebugInfo, CalendarContainerProps } from "@/app/types/calendar";
 import { EDGE_ZONE_WIDTH_PERCENTAGE, TRANSITION_COOLDOWN, EDGE_HOLD_DURATION } from "@/app/lib/constants";
+import { AnimatePresence, motion } from "framer-motion";
 
 // Helper to get sample content randomly
 const sampleTitles = Object.values(sampleEventsContent).flat().map(e => e.title);
@@ -476,6 +477,13 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     lastTransitionTimeRef.current = now;
     globalDragTracking.edgeDetectionEnabled = false;
     
+    // Pre-render next day content to prevent blank screens
+    const newDate = direction === 'left' ? subDays(currentDate, 1) : addDays(currentDate, 1);
+    const newDateStr = format(newDate, "yyyy-MM-dd");
+    
+    // Force background color to stay white during transition
+    document.body.classList.add('transitioning-day');
+    
     // Clear edge hold timer if transition starts
     if (edgeHoldTimerRef.current) {
         console.log("[triggerDateChange] Clearing edge hold timer.");
@@ -491,9 +499,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         cardElement.style.boxShadow = '0 10px 25px rgba(0, 0, 0, 0.25)';
       }
     }
-    
-    const newDate = direction === 'left' ? subDays(currentDate, 1) : addDays(currentDate, 1);
-    const newDateStr = format(newDate, "yyyy-MM-dd");
     
     reactSyncRef.current.targetDateAfterTransition = newDateStr;
     globalDragTracking.lastDetectedColumn = newDateStr;
@@ -523,6 +528,10 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       isTransitioningRef.current = false;
       globalDragTracking.inTransition = false;
       globalDragTracking.synchronizingWithReact = false;
+      
+      // Remove transition class
+      document.body.classList.remove('transitioning-day');
+      
       console.log("Transition complete");
 
       // Vibration feedback when transition completes
@@ -545,7 +554,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         } 
       }, TRANSITION_COOLDOWN);
       
-    }, 300);
+    }, 350); // Add a bit more time to ensure transition completes
   }, [customDragState, currentDate, onDateChange, finalizeCustomDrag]);
 
   const startCustomDrag = useCallback((event: KanbanEvent, clientX: number, clientY: number, targetElement?: HTMLElement) => {
@@ -1150,7 +1159,10 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     enter: (direction: 'left' | 'right') => ({
       x: direction === 'right' ? '100%' : '-100%',
       opacity: 0.8,
-      scale: 0.98,
+      scale: 0.95,
+      rotateY: direction === 'right' ? '-5deg' : '5deg',
+      filter: 'blur(1px)',
+      boxShadow: '0 10px 20px rgba(0, 0, 0, 0.1)',
       position: 'absolute' as const,
       width: '100%',
       height: '100%',
@@ -1160,28 +1172,44 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       x: 0,
       opacity: 1,
       scale: 1,
+      rotateY: '0deg',
+      filter: 'blur(0px)',
+      boxShadow: 'none',
       position: 'relative' as const,
       width: '100%',
       height: '100%',
       zIndex: 2,
       transition: {
-        type: "spring", stiffness: 280, damping: 30, mass: 0.8,
-        opacity: { duration: 0.3, ease: "easeOut" },
-        scale: { duration: 0.3, ease: "easeOut" },
+        type: "spring", 
+        stiffness: 350, 
+        damping: 30,
+        mass: 0.8,
+        opacity: { duration: 0.2, ease: "easeOut" },
+        scale: { duration: 0.3, ease: [0.34, 1.26, 0.64, 1] },
+        rotateY: { duration: 0.4, ease: "easeOut" },
+        filter: { duration: 0.2, ease: "easeOut" },
       }
     },
     exit: (direction: 'left' | 'right') => ({
-      x: direction === 'right' ? '-50%' : '50%',
+      x: direction === 'right' ? '-30%' : '30%',
       opacity: 0.5,
-      scale: 0.95,
+      scale: 0.96,
+      rotateY: direction === 'right' ? '5deg' : '-5deg',
+      filter: 'blur(1px)',
+      boxShadow: '0 5px 15px rgba(0, 0, 0, 0.05)',
       position: 'absolute' as const,
       width: '100%',
       height: '100%',
       zIndex: 1,
       transition: {
-        type: "spring", stiffness: 280, damping: 30, mass: 0.8,
+        type: "spring", 
+        stiffness: 300, 
+        damping: 30,
+        mass: 0.8,
         opacity: { duration: 0.2, ease: "easeIn" },
         scale: { duration: 0.2, ease: "easeIn" },
+        rotateY: { duration: 0.25, ease: "easeIn" },
+        filter: { duration: 0.2, ease: "easeIn" },
       }
     }),
   };
@@ -1231,8 +1259,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         </div>
       )}
       
-      {/* Temporarily removed AnimatePresence and motion.div for layout debugging */}
-      <div className="h-full w-full flex-1 flex flex-col"> {/* Added flex properties */} 
+      {/* Enhanced AnimatePresence with perspective transforms for better 3D */}
+      <div className="h-full w-full flex-1 flex flex-col perspective-[1800px] day-transition-container"> 
         {effectiveView === 'week' && (
           <CalendarWeekView
             currentDate={currentDate}
@@ -1243,15 +1271,40 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           />
         )}
         {effectiveView === 'day' && (
-          <CalendarDayView
-            currentDate={currentDate}
-            dayEvents={filteredEvents}
-            customDragState={customDragState}
-            dayOffset={dayOffsetRef.current}
-            debugInfo={debugRef.current}
-            onEventClick={handleEventClick} 
-            onEventMouseDown={handleEventMouseDown} 
-          />
+          <AnimatePresence 
+            initial={false} 
+            mode="sync" 
+            custom={prevDateAnimRef.current.direction}
+          >
+            <motion.div
+              key={format(currentDate, 'yyyy-MM-dd')}
+              custom={prevDateAnimRef.current.direction}
+              variants={iosSlideVariants}
+              initial="enter"
+              animate="center"
+              exit="exit"
+              style={{ 
+                width: '100%', 
+                height: '100%',
+                transformStyle: 'preserve-3d',
+                transformOrigin: prevDateAnimRef.current.direction === 'left' ? 'right center' : 'left center',
+                backgroundColor: 'white', // Ensure white background during transition
+              }}
+              className="flex-1 will-change-transform motion-div-container"
+            >
+              <div className="h-full w-full bg-white rounded-b overflow-hidden calendar-day-view">
+                <CalendarDayView
+                  currentDate={currentDate}
+                  dayEvents={filteredEvents}
+                  customDragState={customDragState}
+                  dayOffset={dayOffsetRef.current}
+                  debugInfo={debugRef.current}
+                  onEventClick={handleEventClick} 
+                  onEventMouseDown={handleEventMouseDown} 
+                />
+              </div>
+            </motion.div>
+          </AnimatePresence>
         )}
       </div>
 
