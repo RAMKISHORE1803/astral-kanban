@@ -149,12 +149,19 @@ const EventCard: React.FC<EventCardProps> = ({
       {/* Drag Handle - only shown on day view/mobile */}
       {isDraggable && (
         <div 
-          className="absolute top-0 right-0 w-10 h-10 flex items-center justify-center cursor-grab active:cursor-grabbing z-30"
+          className="absolute top-0 right-0 w-10 h-10 flex items-center justify-center cursor-grab active:cursor-grabbing z-30 
+                     rounded-bl-lg bg-slate-50 hover:bg-slate-100 transition-colors duration-150 border-l border-b border-slate-200
+                     group-hover:shadow-sm"
           onTouchStart={handleDragHandleTouchStart}
           onMouseDown={handleDragHandleMouseDown}
           style={{ touchAction: 'none' }} // Disable default touch behavior ONLY on the handle
+          aria-label="Drag to reorder"
+          title="Drag to reorder"
         >
-          <GripVertical size={14} className="text-slate-400" />
+          <div className="flex flex-col items-center justify-center gap-0.5">
+            <GripVertical size={16} className="text-slate-500 group-hover:text-slate-700" />
+            <span className="text-[8px] font-medium text-slate-500 select-none">DRAG</span>
+          </div>
         </div>
       )}
     

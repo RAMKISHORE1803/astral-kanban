@@ -176,10 +176,11 @@ const CalendarDayView = ({
       {/* Scrollable Content - Using the same approach as in CalendarWeekView */}
       <div 
         ref={contentRef}
-        className="overflow-y-auto p-4 relative"
+        className="overflow-y-auto p-4 relative flex-1"
         style={{
           height: "calc(100% - 56px)", /* Calculated height based on parent height minus header */
-          maxHeight: "calc(100% - 56px)"
+          maxHeight: "calc(100% - 56px)",
+          paddingBottom: "80px" /* Extra padding at the bottom to ensure content is fully scrollable */
         }}
       >
         {/* Scroll shadow indicators */}
@@ -212,7 +213,7 @@ const CalendarDayView = ({
               </div>
             ))}
             {/* Significantly increased bottom padding to ensure more than enough space */}
-            <div className="h-36 md:h-28"></div>
+            <div className="h-52 md:h-44"></div>
           </div>
         )}
       </div>
