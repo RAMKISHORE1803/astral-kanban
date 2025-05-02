@@ -95,7 +95,7 @@ function updateGlobalOverlayPosition() {
       if (dateAttr) {
         globalDragTracking.lastDetectedColumn = dateAttr;
         // Update the drop zone element
-        globalDragTracking.dropZoneElement = columnElement.closest('[data-date]') || columnElement;
+        globalDragTracking.dropZoneElement = (columnElement.closest('[data-date]') as HTMLElement) || (columnElement as HTMLElement);
       }
     }
   }
