@@ -2,9 +2,10 @@
 
 import { useState, useRef, useCallback, useEffect } from "react";
 import { format } from "date-fns";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import EventCard from "../EventCard";
 import { cn } from "@/app/lib/utils";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { KanbanEvent, CalendarDayViewProps, CustomDragState, DebugInfo } from "@/app/types/calendar";
 
 // Constants
@@ -21,6 +22,10 @@ const CalendarDayView = ({
   onEventMouseDown,
   containerRef
 }: CalendarDayViewProps) => {
+  // State for touch handling
+  const [touchStartPos, setTouchStartPos] = useState<{x: number, y: number} | null>(null);
+  const [isScrolling, setIsScrolling] = useState(false);
+  
   // State for long press detection
   const [pressedEvent, setPressedEvent] = useState<KanbanEvent | null>(null);
   const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -55,33 +60,87 @@ const CalendarDayView = ({
     }
   }, []);
 
-  // Handle initial touch/mouse down - start timer for long press
-  const handlePointerDown = useCallback((event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => {
+  // Handle initial touch down
+  const handleTouchStart = useCallback((event: KanbanEvent, e: React.TouchEvent) => {
+    if (customDragState.isDragging) return;
+    
     e.stopPropagation();
     clearPressTimer();
     setPressedEvent(event);
     
-    // Start long press timer
+    // Record starting touch position
+    setTouchStartPos({
+      x: e.touches[0].clientX,
+      y: e.touches[0].clientY
+    });
+    setIsScrolling(false);
+    
+    // Start long press timer for drag initiation
+    pressTimerRef.current = setTimeout(() => {
+      onEventMouseDown(event, e);
+      setPressedEvent(null);
+      setTouchStartPos(null);
+    }, LONG_PRESS_DURATION);
+  }, [clearPressTimer, customDragState.isDragging, onEventMouseDown]);
+
+  // Handle touch move
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!touchStartPos || customDragState.isDragging) return;
+    
+    const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.y);
+    const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.x);
+    
+    // If vertical movement exceeds threshold, consider it scrolling
+    if (deltaY > SCROLL_THRESHOLD && deltaY > deltaX) {
+      setIsScrolling(true);
+      clearPressTimer();
+    }
+  }, [touchStartPos, customDragState.isDragging, clearPressTimer]);
+
+  // Handle touch end - if no scrolling was detected, treat as a click
+  const handleTouchEnd = useCallback((event: KanbanEvent) => {
+    if (pressedEvent?.id === event.id && !isScrolling && !customDragState.isDragging) {
+      clearPressTimer();
+      onEventClick(event);
+    }
+    
+    setPressedEvent(null);
+    setTouchStartPos(null);
+    setIsScrolling(false);
+  }, [clearPressTimer, onEventClick, pressedEvent, isScrolling, customDragState.isDragging]);
+
+  // Handle touch cancel - clear any pending actions
+  const handleTouchCancel = useCallback(() => {
+    clearPressTimer();
+    setPressedEvent(null);
+    setTouchStartPos(null);
+    setIsScrolling(false);
+  }, [clearPressTimer]);
+  
+  // Mouse events - simpler since scrolling is usually handled by wheel events
+  const handleMouseDown = useCallback((event: KanbanEvent, e: React.MouseEvent) => {
+    if (customDragState.isDragging) return;
+    
+    e.stopPropagation();
+    clearPressTimer();
+    setPressedEvent(event);
+    
+    // Start long press timer for drag initiation
     pressTimerRef.current = setTimeout(() => {
       onEventMouseDown(event, e);
       setPressedEvent(null);
     }, LONG_PRESS_DURATION);
-  }, [clearPressTimer, onEventMouseDown]);
+  }, [clearPressTimer, customDragState.isDragging, onEventMouseDown]);
 
-  // Handle touch/mouse up - if no long press was triggered, treat as a click
-  const handlePointerUp = useCallback((event: KanbanEvent) => {
-    if (pressedEvent?.id === event.id) {
-      clearPressTimer();
-      onEventClick(event);
-      setPressedEvent(null);
-    }
-  }, [clearPressTimer, onEventClick, pressedEvent]);
-
-  // Handle touch/mouse leave - cancel long press
-  const handlePointerLeave = useCallback(() => {
+  // Mouse click - handle click event
+  const handleClick = useCallback((event: KanbanEvent, e: React.MouseEvent) => {
+    if (customDragState.isDragging) return;
+    
+    e.stopPropagation();
     clearPressTimer();
+    onEventClick(event);
     setPressedEvent(null);
-  }, [clearPressTimer]);
+  }, [clearPressTimer, customDragState.isDragging, onEventClick]);
   
   // Simple function to check if we're hovering near an edge
   const isEdgeHovering = customDragState.isDragging && customDragState.currentlyHovering !== null;
@@ -90,47 +149,92 @@ const CalendarDayView = ({
   
   return (
     <div className="relative h-full overflow-hidden flex flex-col" ref={containerRef}>
-      {/* Edge indicators - simplified */}
-      {customDragState.isDragging && (
-        <>
-          {/* Left edge indicator */}
-          <div className={cn(
-            "absolute left-0 top-0 h-full w-[20%] z-10 pointer-events-none",
-            "bg-gradient-to-r from-blue-300/30 to-transparent transition-opacity duration-150",
-            customDragState.currentlyHovering === 'left' ? "opacity-100" : "opacity-0"
-          )}>
-            {customDragState.currentlyHovering === 'left' && (
-              <div className="absolute left-4 top-1/2 -translate-y-1/2 bg-blue-500 rounded-full p-2 shadow-md">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M15 19L8 12L15 5" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-            )}
-          </div>
-          
-          {/* Right edge indicator */}
-          <div className={cn(
-            "absolute right-0 top-0 h-full w-[20%] z-10 pointer-events-none",
-            "bg-gradient-to-l from-blue-300/30 to-transparent transition-opacity duration-150",
-            customDragState.currentlyHovering === 'right' ? "opacity-100" : "opacity-0"
-          )}>
-            {customDragState.currentlyHovering === 'right' && (
-              <div className="absolute right-4 top-1/2 -translate-y-1/2 bg-blue-500 rounded-full p-2 shadow-md">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <path d="M9 5L16 12L9 19" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </div>
-            )}
-          </div>
-        </>
-      )}
+      {/* Simplified Edge indicators - arrows only, no text labels */}
+      <AnimatePresence>
+        {customDragState.isDragging && (
+          <>
+            {/* Left edge indicator - Previous Day (arrow only) */}
+            <motion.div 
+              className={cn(
+                "absolute left-0 top-0 bottom-0 z-30 pointer-events-none flex items-center",
+                "bg-gradient-to-r from-blue-500/20 to-transparent"
+              )}
+              initial={{ width: "0%", opacity: 0 }}
+              animate={{ 
+                width: customDragState.currentlyHovering === 'left' ? "15%" : "5%",
+                opacity: customDragState.currentlyHovering === 'left' ? 1 : 0.5
+              }}
+              exit={{ width: "0%", opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Navigation arrow with animation */}
+              <motion.div 
+                className={cn(
+                  "absolute left-3 p-3 rounded-full bg-blue-500 shadow-lg",
+                  customDragState.currentlyHovering === 'left' ? "opacity-100" : "opacity-70"
+                )}
+                animate={{
+                  scale: customDragState.currentlyHovering === 'left' ? [1, 1.1, 1] : 1,
+                  x: customDragState.currentlyHovering === 'left' ? [-5, 0, -5] : 0
+                }}
+                transition={{ 
+                  repeat: customDragState.currentlyHovering === 'left' ? Infinity : 0,
+                  duration: 1.5
+                }}
+              >
+                <ChevronLeft className="text-white" size={20} />
+              </motion.div>
+            </motion.div>
+            
+            {/* Right edge indicator - Next Day (arrow only) */}
+            <motion.div 
+              className={cn(
+                "absolute right-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-end",
+                "bg-gradient-to-l from-blue-500/20 to-transparent"
+              )}
+              initial={{ width: "0%", opacity: 0 }}
+              animate={{ 
+                width: customDragState.currentlyHovering === 'right' ? "15%" : "5%", 
+                opacity: customDragState.currentlyHovering === 'right' ? 1 : 0.5
+              }}
+              exit={{ width: "0%", opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              {/* Navigation arrow with animation */}
+              <motion.div 
+                className={cn(
+                  "absolute right-3 p-3 rounded-full bg-blue-500 shadow-lg",
+                  customDragState.currentlyHovering === 'right' ? "opacity-100" : "opacity-70"
+                )}
+                animate={{
+                  scale: customDragState.currentlyHovering === 'right' ? [1, 1.1, 1] : 1,
+                  x: customDragState.currentlyHovering === 'right' ? [5, 0, 5] : 0
+                }}
+                transition={{ 
+                  repeat: customDragState.currentlyHovering === 'right' ? Infinity : 0, 
+                  duration: 1.5
+                }}
+              >
+                <ChevronRight className="text-white" size={20} />
+              </motion.div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
-      {/* Day displacement indicator */}
-      {customDragState.isDragging && dayOffset !== 0 && (
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-50 bg-blue-500 text-white px-3 py-1 rounded-full shadow-md text-sm font-medium">
-          {dayOffset > 0 ? `+${dayOffset}` : dayOffset} days
-        </div>
-      )}
+      {/* Day displacement indicator - Shows how many days moved */}
+      {/* <AnimatePresence>
+        {customDragState.isDragging && dayOffset !== 0 && (
+          <motion.div 
+            className="absolute top-4 left-1/2 z-50 bg-blue-500 text-white px-4 py-2 rounded-full shadow-lg"
+            initial={{ opacity: 0, y: -20, x: "-50%" }}
+            animate={{ opacity: 1, y: 0, x: "-50%" }}
+            exit={{ opacity: 0, y: -20, x: "-50%" }}
+          >
+            <span className="font-medium">{dayOffset > 0 ? `+${dayOffset}` : dayOffset} days</span>
+          </motion.div>
+        )}
+      </AnimatePresence> */}
 
       {/* Day header - fixed at top */}
       <div className="px-4 pt-4 pb-3 border-b border-slate-200 bg-white sticky top-0 z-10">
@@ -144,7 +248,7 @@ const CalendarDayView = ({
         ref={contentRef}
         className={cn(
           "px-4 py-4 overflow-y-auto flex-1 calendar-day-view-content",
-          isEdgeHovering && "opacity-80" // Simple visual feedback when edge hovering
+          isEdgeHovering && "opacity-90 transition-opacity duration-200" // Fade content during edge hovering
         )}
         style={{
           overscrollBehavior: 'contain', // Prevent pull-to-refresh on iOS
@@ -156,58 +260,39 @@ const CalendarDayView = ({
             No events for this day
           </div>
         ) : (
-          <div 
-            className={cn(
-              "space-y-3 relative",
-              customDragState.isDragging && "pb-10" // Additional padding during drag
-            )}
-          >
-            {dayEvents.map((event, index) => (
+          <div className="space-y-3 relative pb-10">
+            {dayEvents.map((event) => (
               <div
                 key={event.id}
-                className={cn(
-                  "relative",
-                  // If this is the drop target while dragging, show insertion indicator
-                  customDragState.dropTargetId === event.id && "before:absolute before:left-0 before:right-0 before:h-1 before:bg-blue-400 before:rounded before:-top-2 before:z-10 before:animate-pulse"
-                )}
+                className="relative"
+                data-event-id={event.id}
               >
                 <EventCard
                   event={event}
                   isSource={customDragState.event?.id === event.id}
                   isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
-                  isDropTarget={customDragState.dropTargetId === event.id}
-                  onClick={() => onEventClick(event)}
-                  onMouseDown={(e) => handlePointerDown(event, e)}
-                  onTouchStart={(e) => handlePointerDown(event, e)}
-                  onMouseUp={() => handlePointerUp(event)}
-                  onTouchEnd={() => handlePointerUp(event)}
-                  onMouseLeave={handlePointerLeave}
+                  isDropTarget={false}
+                  onClick={(e) => handleClick(event, e as unknown as React.MouseEvent)}
+                  onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
+                  onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
+                  onTouchEnd={() => handleTouchEnd(event)}
                 />
               </div>
             ))}
-            
-            {/* Space at the bottom that can receive drops during drag */}
-            {customDragState.isDragging && (
-              <div 
-                className={cn(
-                  "h-20 mt-2 bg-transparent",
-                  // Highlight when hovering over the bottom area with no specific target
-                  customDragState.isDragging && 
-                  !customDragState.dropTargetId && 
-                  formattedDate === format(currentDate, "yyyy-MM-dd") && 
-                  "border-2 border-dashed border-blue-200 rounded-md"
-                )}
-                data-drop-zone="bottom"
-              />
-            )}
-            
             {/* Extra padding at the bottom for comfortable scrolling */}
             <div className="h-10"></div>
           </div>
         )}
       </div>
+      
+      {/* Scroll indicator tip - appears briefly when user first views the list */}
+      {dayEvents.length > 3 && (
+        <div className="scroll-indicator">
+          <div className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none bg-gradient-to-t from-white to-transparent opacity-70" />
+        </div>
+      )}
     </div>
   );
 };
 
-export default CalendarDayView; 
+export default CalendarDayView;
