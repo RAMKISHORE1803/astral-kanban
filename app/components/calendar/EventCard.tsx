@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from "framer-motion";
 import { cn } from "@/app/lib/utils";
-import { Clock, CalendarDays, GripVertical } from "lucide-react";
+import { Clock, CalendarDays } from "lucide-react";
 import type { KanbanEvent, EventCardProps as OriginalEventCardProps } from "@/app/types/calendar";
 
 // Simple hash function for color generation
@@ -60,17 +60,6 @@ const EventCard: React.FC<EventCardProps> = ({
     }
   };
 
-  // Handler for the drag handle
-  const handleDragHandleTouchStart = (e: React.TouchEvent) => {
-    e.stopPropagation();
-    if (onTouchStart) onTouchStart(e);
-  };
-
-  const handleDragHandleMouseDown = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (onMouseDown) onMouseDown(e);
-  };
-
   // Determine if the main card div should be clickable
   // It should be clickable ONLY if the button is NOT shown (Week View)
   const isCardClickable = !showViewDetailsButton;
@@ -96,7 +85,7 @@ const EventCard: React.FC<EventCardProps> = ({
         onTouchEnd={onTouchEnd}
         whileHover={{ y: -1 }}
         style={{
-          touchAction: 'auto', // Allow scrolling on the card in week view
+          touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
         }}
       >
         {/* Simplified content for week view */}
@@ -126,7 +115,7 @@ const EventCard: React.FC<EventCardProps> = ({
   return (
     <motion.div
       className={cn(
-        "relative z-0 group bg-white rounded-lg overflow-hidden cursor-default touch-manipulation mb-2 hover:z-10",
+        "relative z-0 group bg-white rounded-lg overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-2 hover:z-10",
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
@@ -135,36 +124,20 @@ const EventCard: React.FC<EventCardProps> = ({
       )}
       data-event-id={event.id}
       // Don't attach onClick to the main div, only the button should open detail panel
+      onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseLeave}
+      onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       // Remove hover animation to avoid interference with drag
-      whileHover={undefined}
+      whileHover={isDraggable ? undefined : { y: -2 }}
       // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
       style={{
-        touchAction: 'pan-y', // Explicitly allow vertical scrolling
+        touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
+        willChange: 'transform', // Hardware acceleration hint
       }}
     >
-      {/* Drag Handle - only shown on day view/mobile */}
-      {isDraggable && (
-        <div 
-          className="absolute top-0 right-0 w-10 h-10 flex items-center justify-center cursor-grab active:cursor-grabbing z-30 
-                     rounded-bl-lg bg-slate-50 hover:bg-slate-100 transition-colors duration-150 border-l border-b border-slate-200
-                     group-hover:shadow-sm"
-          onTouchStart={handleDragHandleTouchStart}
-          onMouseDown={handleDragHandleMouseDown}
-          style={{ touchAction: 'none' }} // Disable default touch behavior ONLY on the handle
-          aria-label="Drag to reorder"
-          title="Drag to reorder"
-        >
-          <div className="flex flex-col items-center justify-center gap-0.5">
-            <GripVertical size={16} className="text-slate-500 group-hover:text-slate-700" />
-            <span className="text-[8px] font-medium text-slate-500 select-none">DRAG</span>
-          </div>
-        </div>
-      )}
-    
       {/* Image Section - Full width, consistent height */}
       {event.imageUrl && (
         <div className="relative h-24 w-full overflow-hidden"> 
