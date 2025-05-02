@@ -968,9 +968,6 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
               // Update visual hover state
               if (currentEdge !== customDragState.currentlyHovering) {
                  setCustomDragState(prev => ({ ...prev, currentlyHovering: currentEdge }));
-                 if (currentEdge && navigator.vibrate) {
-                     navigator.vibrate(10); // Vibrate on entering edge zone
-                 }
               }
 
               // Timer logic based on edge state change
