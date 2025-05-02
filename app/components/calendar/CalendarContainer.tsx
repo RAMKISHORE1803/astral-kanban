@@ -1260,7 +1260,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       )}
       
       {/* Enhanced AnimatePresence with perspective transforms for better 3D */}
-      <div className="h-full w-full flex-1 flex flex-col perspective-[1800px] day-transition-container"> 
+      <div className="h-full w-full flex-1 flex flex-col day-transition-container perspective-1800 preserve-3d"> 
         {effectiveView === 'week' && (
           <CalendarWeekView
             currentDate={currentDate}
@@ -1284,13 +1284,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
               animate="center"
               exit="exit"
               style={{ 
-                width: '100%', 
-                height: '100%',
-                transformStyle: 'preserve-3d',
                 transformOrigin: prevDateAnimRef.current.direction === 'left' ? 'right center' : 'left center',
-                backgroundColor: 'white', // Ensure white background during transition
               }}
-              className="flex-1 will-change-transform motion-div-container"
+              className="flex-1 w-full h-full bg-white will-change-transform motion-div-container preserve-3d transform-gpu"
             >
               <div className="h-full w-full bg-white rounded-b overflow-hidden calendar-day-view">
                 <CalendarDayView
