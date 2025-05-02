@@ -36,7 +36,7 @@ const Header = ({ currentDate, onDateChange, view }: HeaderProps) => {
 
   const getDateRangeText = () => {
     if (isMobile) {
-      return format(currentDate, "MMMM d, yyyy");
+      return null; // Return null for mobile view
     } else if (view === "day") {
       // Desktop day view - show full date
       return format(currentDate, "EEEE, MMMM d, yyyy");
@@ -75,7 +75,7 @@ const Header = ({ currentDate, onDateChange, view }: HeaderProps) => {
     <header className="bg-gradient-to-b from-blue-50 to-white pt-3 pb-2 px-4 md:px-6 border-b border-slate-200 flex flex-col shrink-0 shadow-sm">
       {/* Top Row */}
       <div className="flex items-center justify-between gap-2 md:gap-4 mb-2">
-         {/* Left Section: Logo, Today, Navigation */}
+         {/* Left Section: Logo and Today button */}
         <div className="flex items-center gap-3 md:gap-4">
           <div className="flex items-center font-bold text-xl">
             <span className="text-blue-600 relative mr-1">
@@ -92,26 +92,29 @@ const Header = ({ currentDate, onDateChange, view }: HeaderProps) => {
             Today
           </Button>
 
-          {/* Navigation Arrows with enhanced styles */}
-          <div className="flex items-center gap-2">
+          {/* Navigation Arrows - only show in desktop view within left section */}
+          {!isMobile && (
+            <div className="flex items-center gap-2">
               <button
                 className={iconButtonStyle}
                 onClick={navigateToPrevious}
-                aria-label={isMobile || view === 'day' ? 'Previous Day' : 'Previous Week'}
+                aria-label={view === 'day' ? 'Previous Day' : 'Previous Week'}
               >
                 <ChevronLeft size={20} />
               </button>
               <button
                 className={iconButtonStyle}
                 onClick={navigateToNext}
-                aria-label={isMobile || view === 'day' ? 'Next Day' : 'Next Week'}
+                aria-label={view === 'day' ? 'Next Day' : 'Next Week'}
               >
                 <ChevronRight size={20} />
               </button>
-          </div>
+            </div>
+          )}
           
-          {/* Enhanced Date Range Display */}
-          <motion.div
+          {/* Enhanced Date Range Display - Only show on desktop */}
+          {!isMobile && getDateRangeText() && (
+            <motion.div
               className="bg-gradient-to-r from-white/80 to-white/50 backdrop-blur-sm shadow-sm px-4 py-1.5 rounded-full ml-1"
               key={getDateRangeText()} // Animate when text changes
               initial={{ opacity: 0.5, y: -5 }}
@@ -123,7 +126,28 @@ const Header = ({ currentDate, onDateChange, view }: HeaderProps) => {
                 {getDateRangeText()}
               </h2>
             </motion.div>
+          )}
         </div>
+        
+        {/* Right Section: Navigation Arrows in mobile view */}
+        {isMobile && (
+          <div className="flex items-center gap-2">
+            <button
+              className={iconButtonStyle}
+              onClick={navigateToPrevious}
+              aria-label="Previous Day"
+            >
+              <ChevronLeft size={20} />
+            </button>
+            <button
+              className={iconButtonStyle}
+              onClick={navigateToNext}
+              aria-label="Next Day"
+            >
+              <ChevronRight size={20} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Bottom Row: Week Day Selector (Mobile) - Enhanced with gradients */}
