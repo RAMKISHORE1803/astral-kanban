@@ -832,7 +832,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         display: 'none', 
         transformOrigin: 'center center', 
         willChange: 'transform', 
-        backfaceVisibility: 'hidden' 
+        backfaceVisibility: 'hidden',
+        transition: 'none' // Ensure no transitions to make movement instant and fluid
       });
       overlayDiv.setAttribute('aria-hidden', 'true');
       document.body.appendChild(overlayDiv);
@@ -948,134 +949,149 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     console.log("Setting up global POINTER event handlers for drag (with stabilized finalize ref)");
     
     const handlePointerMove = (e: PointerEvent) => {
-       globalDragTracking.currentPosition = { x: e.clientX, y: e.clientY };
-       // Update visual position state immediately
-       setCustomDragState(prev => ({ ...prev, position: { x: e.clientX, y: e.clientY } }));
+      // Direct position update without any delays
+      globalDragTracking.currentPosition = { x: e.clientX, y: e.clientY };
       
-       // Edge hover logic + Timer management
-       if (!isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled && effectiveView === 'day') {
-          const container = document.querySelector('.calendar-container');
-          const containerRect = container ? container.getBoundingClientRect() : containerRef.current?.getBoundingClientRect();
+      // Update visual position state immediately
+      setCustomDragState(prev => ({ ...prev, position: { x: e.clientX, y: e.clientY } }));
+      
+      // Ensure the overlay is updated without waiting for animation frame
+      if (globalDragTracking.activeOverlay) {
+        const cardElement = globalDragTracking.activeOverlay.querySelector('div');
+        if (cardElement) {
+          // Position so finger/cursor is at the right position
+          const posX = e.clientX - globalDragTracking.cursorOverlayPosition.x;
+          const posY = e.clientY - globalDragTracking.cursorOverlayPosition.y;
           
-          if (containerRect) {
-              const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
-              const leftEdgeBoundary = containerRect.left + edgeWidth;
-              const rightEdgeBoundary = containerRect.right - edgeWidth;
-              let currentEdge: 'left' | 'right' | null = null;
-              if (e.clientX < leftEdgeBoundary) currentEdge = 'left';
-              else if (e.clientX > rightEdgeBoundary) currentEdge = 'right';
-              
-              // Update visual hover state
-              if (currentEdge !== customDragState.currentlyHovering) {
-                 setCustomDragState(prev => ({ ...prev, currentlyHovering: currentEdge }));
-              }
-
-              // Timer logic based on edge state change
-              if (currentEdge !== edgeHoverDirectionRef.current) {
-                  console.log(`Edge hover changed: ${edgeHoverDirectionRef.current} -> ${currentEdge}`);
-                  // Clear existing timer whenever edge state changes
-                  if (edgeHoldTimerRef.current) {
-                      console.log("Clearing existing edge hold timer due to state change.");
-                      clearTimeout(edgeHoldTimerRef.current);
-                      edgeHoldTimerRef.current = null;
-                  }
-                  
-                  edgeHoverDirectionRef.current = currentEdge; // Update tracked edge direction
-
-                  // If we entered a NEW edge zone, start the timer
-                  if (currentEdge) {
-                      console.log(`Starting ${EDGE_HOLD_DURATION}ms timer for edge: ${currentEdge}`);
-                      edgeHoldTimerRef.current = setTimeout(() => {
-                          const currentTrackedEdge = edgeHoverDirectionRef.current; // Capture edge direction at timer start
-                          console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Timer fired.`);
-                          
-                          // Check flags AGAIN before triggering
-                          if (!isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled) {
-                              // Re-check current position *now*
-                              const currentX = globalDragTracking.currentPosition.x;
-                              const container = document.querySelector('.calendar-container');
-                              if (container) {
-                                const containerRectNow = container.getBoundingClientRect();
-                                const edgeWidthNow = containerRectNow.width * EDGE_ZONE_WIDTH_PERCENTAGE;
-                                const stillAtLeft = currentX < containerRectNow.left + edgeWidthNow;
-                                const stillAtRight = currentX > containerRectNow.right - edgeWidthNow;
-                                const finalEdgeDirection = stillAtLeft ? 'left' : (stillAtRight ? 'right' : null);
-
-                                console.log(`[Edge Timer Callback - ${currentTrackedEdge}] PosCheck: currentX: ${currentX}, FinalDirection: ${finalEdgeDirection}`); 
-
-                                // Check if still at the edge the timer was started for
-                                if (finalEdgeDirection === currentTrackedEdge) {
-                                    console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Flags & Position OK. Triggering change.`);
-                                    if (triggerDateChangeRef.current && currentTrackedEdge) {
-                                       triggerDateChangeRef.current(currentTrackedEdge);
-                                    } else if (!currentTrackedEdge) {
-                                        console.warn("[Edge Timer Callback] Tracked edge was null, cannot trigger transition.")
-                                    }
-                                } else {
-                                     console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Condition failed: Moved out of original edge zone (${finalEdgeDirection}).`);
-                                }
-                              } else {
-                                 console.warn("[Edge Timer Callback] Container not found during check.");
-                              }
-                          } else {
-                              console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Transition blocked by flags.`);
-                          }
-                          edgeHoldTimerRef.current = null; // Timer finished
-                          // Don't reset edgeHoverDirectionRef here, let the next move handle it
-                      }, EDGE_HOLD_DURATION);
-                  }
-              }
-          }
-      }
-    };
-    
-    const handlePointerEnd = (e: PointerEvent) => {
-      console.log(`%cPOINTER END EVENT DETECTED: ${e.type}`, "color: red; font-weight: bold;");
-      // Clear edge hold timer on drop/cancel
-      if (edgeHoldTimerRef.current) {
-         console.log("[handlePointerEnd] Clearing edge hold timer.");
-         clearTimeout(edgeHoldTimerRef.current);
-         edgeHoldTimerRef.current = null;
-      }
-      edgeHoverDirectionRef.current = null;
-      
-      if (!globalDragTracking.isTracking) return;
-      if (isTransitioningRef.current || globalDragTracking.inTransition) {
-        console.log("%cPointer up/cancel during transition - marking drop as pending.", "color: orange;");
-        globalDragTracking.dropPending = true;
-        return;
-      }
-      
-      // Only finalize for touch events - mouse events are handled separately
-      if (e.pointerType === 'touch') {
-        console.log("%cFinalizing drag immediately on pointer event:", "color: green;", e.type);
-        if (finalizeCustomDragRef.current) {
-            finalizeCustomDragRef.current(); 
+          // Direct DOM manipulation for immediate response
+          globalDragTracking.activeOverlay.style.transform = `translate3d(${posX}px, ${posY}px, 0)`;
         }
       }
-    };
+      
+      // Edge hover logic + Timer management
+      if (!isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled && effectiveView === 'day') {
+        const container = document.querySelector('.calendar-container');
+        const containerRect = container ? container.getBoundingClientRect() : containerRef.current?.getBoundingClientRect();
+        
+        if (containerRect) {
+            const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
+            const leftEdgeBoundary = containerRect.left + edgeWidth;
+            const rightEdgeBoundary = containerRect.right - edgeWidth;
+            let currentEdge: 'left' | 'right' | null = null;
+            if (e.clientX < leftEdgeBoundary) currentEdge = 'left';
+            else if (e.clientX > rightEdgeBoundary) currentEdge = 'right';
+            
+            // Update visual hover state
+            if (currentEdge !== customDragState.currentlyHovering) {
+               setCustomDragState(prev => ({ ...prev, currentlyHovering: currentEdge }));
+            }
+
+            // Timer logic based on edge state change
+            if (currentEdge !== edgeHoverDirectionRef.current) {
+                console.log(`Edge hover changed: ${edgeHoverDirectionRef.current} -> ${currentEdge}`);
+                // Clear existing timer whenever edge state changes
+                if (edgeHoldTimerRef.current) {
+                    console.log("Clearing existing edge hold timer due to state change.");
+                    clearTimeout(edgeHoldTimerRef.current);
+                    edgeHoldTimerRef.current = null;
+                }
+                
+                edgeHoverDirectionRef.current = currentEdge; // Update tracked edge direction
+
+                // If we entered a NEW edge zone, start the timer
+                if (currentEdge) {
+                    console.log(`Starting ${EDGE_HOLD_DURATION}ms timer for edge: ${currentEdge}`);
+                    edgeHoldTimerRef.current = setTimeout(() => {
+                        const currentTrackedEdge = edgeHoverDirectionRef.current; // Capture edge direction at timer start
+                        console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Timer fired.`);
+                        
+                        // Check flags AGAIN before triggering
+                        if (!isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled) {
+                            // Re-check current position *now*
+                            const currentX = globalDragTracking.currentPosition.x;
+                            const container = document.querySelector('.calendar-container');
+                            if (container) {
+                              const containerRectNow = container.getBoundingClientRect();
+                              const edgeWidthNow = containerRectNow.width * EDGE_ZONE_WIDTH_PERCENTAGE;
+                              const stillAtLeft = currentX < containerRectNow.left + edgeWidthNow;
+                              const stillAtRight = currentX > containerRectNow.right - edgeWidthNow;
+                              const finalEdgeDirection = stillAtLeft ? 'left' : (stillAtRight ? 'right' : null);
+
+                              console.log(`[Edge Timer Callback - ${currentTrackedEdge}] PosCheck: currentX: ${currentX}, FinalDirection: ${finalEdgeDirection}`); 
+
+                              // Check if still at the edge the timer was started for
+                              if (finalEdgeDirection === currentTrackedEdge) {
+                                  console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Flags & Position OK. Triggering change.`);
+                                  if (triggerDateChangeRef.current && currentTrackedEdge) {
+                                     triggerDateChangeRef.current(currentTrackedEdge);
+                                  } else if (!currentTrackedEdge) {
+                                      console.warn("[Edge Timer Callback] Tracked edge was null, cannot trigger transition.")
+                                  }
+                              } else {
+                                   console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Condition failed: Moved out of original edge zone (${finalEdgeDirection}).`);
+                              }
+                            } else {
+                                 console.warn("[Edge Timer Callback] Container not found during check.");
+                            }
+                        } else {
+                            console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Transition blocked by flags.`);
+                        }
+                        edgeHoldTimerRef.current = null; // Timer finished
+                        // Don't reset edgeHoverDirectionRef here, let the next move handle it
+                    }, EDGE_HOLD_DURATION);
+                }
+            }
+        }
+    }
+  };
+  
+  const handlePointerEnd = (e: PointerEvent) => {
+    console.log(`%cPOINTER END EVENT DETECTED: ${e.type}`, "color: red; font-weight: bold;");
+    // Clear edge hold timer on drop/cancel
+    if (edgeHoldTimerRef.current) {
+       console.log("[handlePointerEnd] Clearing edge hold timer.");
+       clearTimeout(edgeHoldTimerRef.current);
+       edgeHoldTimerRef.current = null;
+    }
+    edgeHoverDirectionRef.current = null;
     
-    // Listener setup
-    document.addEventListener('pointermove', handlePointerMove, { capture: true });
-    document.addEventListener('pointerup', handlePointerEnd, { capture: true });
-    document.addEventListener('pointercancel', handlePointerEnd, { capture: true });
-    document.body.style.userSelect = 'none';
+    if (!globalDragTracking.isTracking) return;
+    if (isTransitioningRef.current || globalDragTracking.inTransition) {
+      console.log("%cPointer up/cancel during transition - marking drop as pending.", "color: orange;");
+      globalDragTracking.dropPending = true;
+      return;
+    }
     
-    // Cleanup
-    return () => {
-      console.log("Removing global POINTER event handlers for drag");
-      document.removeEventListener('pointermove', handlePointerMove, { capture: true });
-      document.removeEventListener('pointerup', handlePointerEnd, { capture: true });
-      document.removeEventListener('pointercancel', handlePointerEnd, { capture: true });
-      document.body.style.userSelect = '';
-       if (edgeHoldTimerRef.current) {
-          console.log("[useEffect Cleanup] Clearing edge hold timer.");
-          clearTimeout(edgeHoldTimerRef.current);
-          edgeHoldTimerRef.current = null;
-       }
-       edgeHoverDirectionRef.current = null;
-    };
-   }, [customDragState.isDragging, effectiveView]);
+    // Only finalize for touch events - mouse events are handled separately
+    if (e.pointerType === 'touch') {
+      console.log("%cFinalizing drag immediately on pointer event:", "color: green;", e.type);
+      if (finalizeCustomDragRef.current) {
+          finalizeCustomDragRef.current(); 
+      }
+    }
+  };
+  
+  // Listener setup
+  document.addEventListener('pointermove', handlePointerMove, { capture: true });
+  document.addEventListener('pointerup', handlePointerEnd, { capture: true });
+  document.addEventListener('pointercancel', handlePointerEnd, { capture: true });
+  document.body.style.userSelect = 'none';
+  
+  // Cleanup
+  return () => {
+    console.log("Removing global POINTER event handlers for drag");
+    document.removeEventListener('pointermove', handlePointerMove, { capture: true });
+    document.removeEventListener('pointerup', handlePointerEnd, { capture: true });
+    document.removeEventListener('pointercancel', handlePointerEnd, { capture: true });
+    document.body.style.userSelect = '';
+     if (edgeHoldTimerRef.current) {
+        console.log("[useEffect Cleanup] Clearing edge hold timer.");
+        clearTimeout(edgeHoldTimerRef.current);
+        edgeHoldTimerRef.current = null;
+     }
+     edgeHoverDirectionRef.current = null;
+  };
+}, [customDragState.isDragging, effectiveView]);
 
   useEffect(() => {
     finalizeCustomDragRef.current = finalizeCustomDrag;

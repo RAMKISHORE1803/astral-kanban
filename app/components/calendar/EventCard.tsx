@@ -76,6 +76,7 @@ const EventCard: React.FC<EventCardProps> = ({
           isSource && !isDropTarget && "opacity-40"
         )}
         data-event-id={event.id}
+        // In week view, clicking the card should open the detail
         onClick={onClick ? () => onClick(event) : undefined}
         onMouseDown={onMouseDown}
         onMouseUp={onMouseUp}
@@ -84,7 +85,7 @@ const EventCard: React.FC<EventCardProps> = ({
         onTouchEnd={onTouchEnd}
         whileHover={{ y: -1 }}
         style={{
-          touchAction: 'auto', // Allow normal touch behavior for scrolling
+          touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
         }}
       >
         {/* Simplified content for week view */}
@@ -122,8 +123,7 @@ const EventCard: React.FC<EventCardProps> = ({
         isSource && "z-20" // Higher z-index for the source card when dragging
       )}
       data-event-id={event.id}
-      // Attach onClick to the main div ONLY if the button isn't shown
-      onClick={isCardClickable && onClick ? () => onClick(event) : undefined}
+      // Don't attach onClick to the main div, only the button should open detail panel
       onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseLeave}
@@ -134,7 +134,7 @@ const EventCard: React.FC<EventCardProps> = ({
       // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
       style={{
-        touchAction: 'auto', // Allow normal touch behavior for scrolling
+        touchAction: isSource ? 'none' : 'auto', // Disable browser touch handling ONLY when dragging
         willChange: 'transform', // Hardware acceleration hint
       }}
     >

@@ -113,16 +113,16 @@ const CalendarDayView = ({
    * Handle touch end
    */
   const handleTouchEnd = useCallback((event: KanbanEvent) => {
-    // Only trigger click if it was a quick tap
-    if (pressedEvent?.id === event.id && !customDragState.isDragging) {
-      if (onEventClick) onEventClick(event);
+    // No longer trigger click on touch end - detail view should only open through the button
+    // Just clean up the state
+    if (!customDragState.isDragging) {
       clearPressTimer();
     }
     
     // Always clear state
     setPressedEvent(null);
     setTouchStartPos(null);
-  }, [clearPressTimer, pressedEvent, customDragState.isDragging, onEventClick]);
+  }, [clearPressTimer, customDragState.isDragging]);
 
   /**
    * Handle touch cancel
@@ -153,7 +153,7 @@ const CalendarDayView = ({
 
   /**
    * Handle click event
-   * Passes click to parent component after clearing any pending timers
+   * Only used by the "View Details" button, not the whole card
    */
   const handleClick = useCallback((event: KanbanEvent) => {
     if (customDragState.isDragging) return;
@@ -326,7 +326,7 @@ const CalendarDayView = ({
                   isSource={customDragState.event?.id === event.id}
                   isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
                   isDropTarget={false}
-                  onClick={() => handleClick(event)}
+                  onClick={handleClick}
                   onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
                   onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
                   onTouchEnd={() => handleTouchEnd(event)}
