@@ -2,23 +2,9 @@
 
 import React from 'react';
 import { motion } from "framer-motion";
-import { KanbanEvent } from "@/app/lib/utils";
 import { cn } from "@/app/lib/utils";
 import { Clock, CalendarDays } from "lucide-react";
-
-export interface EventCardProps {
-  event: KanbanEvent;
-  isSource?: boolean;
-  isDraggable?: boolean;
-  isDropTarget?: boolean;
-  onClick: (event: KanbanEvent) => void;
-  onMouseDown?: (e: React.MouseEvent) => void;
-  onMouseUp?: (e: React.MouseEvent) => void;
-  onMouseLeave?: () => void;
-  onTouchStart?: (e: React.TouchEvent) => void;
-  onTouchMove?: (e: React.TouchEvent) => void;
-  onTouchEnd?: () => void;
-}
+import type { KanbanEvent, EventCardProps } from "@/app/types/calendar";
 
 // Simple hash function for color generation
 function simpleHash(str: string): number {
@@ -53,7 +39,6 @@ const EventCard: React.FC<EventCardProps> = ({
   onMouseUp,
   onMouseLeave,
   onTouchStart,
-  onTouchMove,
   onTouchEnd
 }) => {
   const colorIndex = simpleHash(event.id) % eventColors.length;
@@ -76,7 +61,6 @@ const EventCard: React.FC<EventCardProps> = ({
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseLeave}
       onTouchStart={onTouchStart}
-      onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       whileHover={{ y: -2 }}
       style={{

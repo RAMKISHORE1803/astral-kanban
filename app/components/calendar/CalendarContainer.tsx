@@ -1,28 +1,23 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { format, isSameDay, startOfWeek, endOfWeek, eachDayOfInterval, addHours, addDays, subDays } from "date-fns";
-import { motion, AnimatePresence, PanInfo, useMotionValue, useTransform, animate } from "framer-motion";
-import { KanbanEvent } from "@/app/lib/utils";
-import EventCard from "./EventCard";
-import EventDetail from "./EventDetail";
+import { format, startOfWeek, endOfWeek, eachDayOfInterval, addHours, addDays, subDays } from "date-fns";
+import { motion, AnimatePresence } from "framer-motion";
 import sampleEventsContent from "@/app/lib/eventData";
 import { useMediaQuery } from "@/app/lib/hooks/useMediaQuery";
 import { cn } from "@/app/lib/utils";
-import CalendarDayView from "./CalendarDayView";
-import CalendarWeekView from "./CalendarWeekView";
+import CalendarDayView from "./views/CalendarDayView";
+import CalendarWeekView from "./views/CalendarWeekView";
 import { flushSync } from "react-dom";
+import EventDetailModal from "./EventDetailModal";
+import type { KanbanEvent, ModalData, CustomDragState, OriginRect, DebugInfo, CalendarContainerProps } from "@/app/types/calendar";
+import { EDGE_ZONE_WIDTH_PERCENTAGE, TRANSITION_COOLDOWN, EDGE_HOLD_DURATION } from "@/app/lib/constants";
 
 // Helper to get sample content randomly
 const sampleTitles = Object.values(sampleEventsContent).flat().map(e => e.title);
 const sampleDescriptions = Object.values(sampleEventsContent).flat().map(e => e.description);
 const sampleImages = Object.values(sampleEventsContent).flat().map(e => e.imageUrl);
 const getRandomElement = <T,>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
-
-// Constants for edge detection
-const EDGE_ZONE_WIDTH_PERCENTAGE = 0.2; // 20% of screen width for edge detection
-const TRANSITION_COOLDOWN = 300; // ms to wait before allowing another transition
-const CONTINUOUS_EDGE_COOLDOWN = 500; // Stricter cooldown for continuous edge detection
 
 // Modified global state to improve synchronization with React
 let globalDragTracking = {
@@ -38,10 +33,8 @@ let globalDragTracking = {
   lastDetectedColumn: null as string | null, // Store the last detected column date
   inTransition: false, // Flag to prevent edge detection during transitions
   edgeDetectionEnabled: true, // Flag to control edge detection
-  lastEdgeDetectionTime: 0, // Time when edge detection was last triggered
-  activeHoldTimer: null as NodeJS.Timeout | null, // Timer for validating active edge holding
-  firstEdgeEntryTime: 0, // Time when user first entered the edge zone
-  hasBeenAtEdge: false, // Flag indicating if user has been continuously at the edge
+  edgeHoldTimer: null as NodeJS.Timeout | null, // Renamed for clarity
+  isInEdgeZone: false, // NEW: Track if currently in *any* edge zone
 };
 
 // Improved overlay update function that coordinates with React state
@@ -63,7 +56,7 @@ function updateGlobalOverlayPosition() {
     }
   }
 
-  // Continuously check for edge detection - but with controlled timing
+  // Edge detection logic with 1-second hold requirement
   if (globalDragTracking.isTracking && 
       !globalDragTracking.inTransition && 
       globalDragTracking.edgeDetectionEnabled) {
@@ -73,58 +66,58 @@ function updateGlobalOverlayPosition() {
       const containerRect = container.getBoundingClientRect();
       const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
       
-      const now = Date.now();
       const atLeftEdge = x < containerRect.left + edgeWidth;
       const atRightEdge = x > containerRect.right - edgeWidth;
-      const atEdge = atLeftEdge || atRightEdge;
-      
-      // Check if we're at an edge
-      if (atEdge) {
-        // If this is the first time at the edge, record the time
-        if (!globalDragTracking.hasBeenAtEdge) {
-          globalDragTracking.firstEdgeEntryTime = now;
-          globalDragTracking.hasBeenAtEdge = true;
+      const currentlyAtEdge = atLeftEdge || atRightEdge;
+      const edgeDirection = atLeftEdge ? 'left' : (atRightEdge ? 'right' : null);
+
+      // Log the state on each frame
+      // console.log(`[Edge Detection Frame] AtEdge: ${currentlyAtEdge}, IsInZone: ${globalDragTracking.isInEdgeZone}, TimerExists: ${!!globalDragTracking.edgeHoldTimer}`);
+
+      // User entered an edge zone
+      if (currentlyAtEdge && !globalDragTracking.isInEdgeZone && !globalDragTracking.edgeHoldTimer) {
+        console.log(`[Edge Detection] Entered edge zone: ${edgeDirection}. Starting ${EDGE_HOLD_DURATION}ms timer.`); // Combined logs
+        globalDragTracking.isInEdgeZone = true;
+        
+        // Start the 1-second hold timer
+        globalDragTracking.edgeHoldTimer = setTimeout(() => {
+          console.log("[Edge Timer Callback] Timer fired."); 
           
-          // Set up an active hold timer to validate if the user is actively holding
-          if (globalDragTracking.activeHoldTimer) {
-            clearTimeout(globalDragTracking.activeHoldTimer);
+          // Timer completed. Check if STILL in an edge zone 
+          const currentX = globalDragTracking.currentPosition.x;
+          const container = document.querySelector('.calendar-container'); // Re-get container in case of resize?
+          if (container) {
+              const containerRectNow = container.getBoundingClientRect();
+              const edgeWidthNow = containerRectNow.width * EDGE_ZONE_WIDTH_PERCENTAGE;
+              const stillAtLeft = currentX < containerRectNow.left + edgeWidthNow;
+              const stillAtRight = currentX > containerRectNow.right - edgeWidthNow;
+              const finalEdgeDirection = stillAtLeft ? 'left' : (stillAtRight ? 'right' : null);
+              
+              console.log(`[Edge Timer Callback] PosCheck: currentX: ${currentX}, LeftBoundary: ${containerRectNow.left + edgeWidthNow}, RightBoundary: ${containerRectNow.right - edgeWidthNow}, FinalDirection: ${finalEdgeDirection}`); 
+    
+              if (finalEdgeDirection) {
+                 console.log(`[Edge Timer Callback] Condition met. Dispatching edgeDetected: ${finalEdgeDirection}`);
+                 document.dispatchEvent(new CustomEvent('edgeDetected', { 
+                    detail: { edge: finalEdgeDirection } 
+                 }));
+              } else {
+                 console.log("[Edge Timer Callback] Condition failed: Not in edge zone upon timer completion.");
+              }
+          } else {
+              console.warn("[Edge Timer Callback] Container not found during check.");
           }
           
-          globalDragTracking.activeHoldTimer = setTimeout(() => {
-            // User has been actively holding at the edge, now we can trigger
-            const edgeDirection = atLeftEdge ? 'left' : 'right';
-            if (now - globalDragTracking.lastEdgeDetectionTime > CONTINUOUS_EDGE_COOLDOWN) {
-              globalDragTracking.lastEdgeDetectionTime = now;
-              document.dispatchEvent(new CustomEvent('edgeDetected', { 
-                detail: { 
-                  edge: edgeDirection,
-                  activeHold: true
-                } 
-              }));
-            }
-          }, 100);
-        }
-        // For subsequent frames while at the edge
-        else if (now - globalDragTracking.firstEdgeEntryTime > 200) {
-          // Only trigger after being at edge for a minimum time AND respecting cooldown
-          if (now - globalDragTracking.lastEdgeDetectionTime > CONTINUOUS_EDGE_COOLDOWN) {
-            globalDragTracking.lastEdgeDetectionTime = now;
-            const edgeDirection = atLeftEdge ? 'left' : 'right';
-            document.dispatchEvent(new CustomEvent('edgeDetected', { 
-              detail: { 
-                edge: edgeDirection,
-                activeHold: true
-              } 
-            }));
-          }
-        }
-      } else {
-        // Reset edge tracking when not at edge
-        globalDragTracking.hasBeenAtEdge = false;
-        if (globalDragTracking.activeHoldTimer) {
-          clearTimeout(globalDragTracking.activeHoldTimer);
-          globalDragTracking.activeHoldTimer = null;
-        }
+          // Reset timer reference and zone state AFTER check
+          globalDragTracking.edgeHoldTimer = null;
+          globalDragTracking.isInEdgeZone = false; 
+
+        }, EDGE_HOLD_DURATION);
+      }
+      // User left the edge zone - ONLY reset the flag, DO NOT clear the timer
+      else if (!currentlyAtEdge && globalDragTracking.isInEdgeZone) {
+        console.log("[Edge Detection] Left edge zone (timer might still be running). Resetting isInEdgeZone flag.");
+        globalDragTracking.isInEdgeZone = false;
+        // REMOVED: Clearing timer here
       }
     }
   }
@@ -186,23 +179,13 @@ function snapToPosition(targetX: number, targetY: number, onComplete: () => void
   requestAnimationFrame(animate);
 }
 
-interface CalendarContainerProps {
-  currentDate: Date;
-  view: "week" | "day";
-  onDateChange: (date: Date) => void;
-}
-
 const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContainerProps) => {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [allEvents, setAllEvents] = useState<KanbanEvent[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<KanbanEvent | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const prevDateRef = useRef<Date | null>(null); // Allow null initially
   
-  // State for Event Detail View modal
-  const [detailViewEvent, setDetailViewEvent] = useState<KanbanEvent | null>(null);
-  const [detailViewState, setDetailViewState] = useState<'closed' | 'opening' | 'open' | 'closing'>('closed');
-  const originRectRef = useRef<{x: number, y: number, width: number, height: number, scrollY: number} | null>(null);
+  // SIMPLIFIED State for Event Detail Modal
+  const [modalData, setModalData] = useState<ModalData | null>(null);
   
   // Custom drag tracking state
   const [customDragState, setCustomDragState] = useState<{
@@ -240,8 +223,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   const lastTransitionTimeRef = useRef(0);
   
   // Refs for callbacks / coordination
-  const triggerDateChangeRef = useRef<(direction: 'left' | 'right', isActiveHold?: boolean) => void>();
-  const finalizeCustomDragRef = useRef<() => void>(); // Might not be needed anymore
+  const triggerDateChangeRef = useRef<(direction: 'left' | 'right') => void>();
+  const finalizeCustomDragRef = useRef<() => void>();
   const reactSyncRef = useRef({
     lastStateUpdate: 0,
     targetDateAfterTransition: null as string | null,
@@ -249,6 +232,10 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     pendingUpdate: false
   });
   const prevDateAnimRef = useRef<{ date: Date | null, direction: 'left' | 'right' | null }>({ date: null, direction: null });
+
+  // NEW Refs for timer-based edge transition
+  const edgeHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const edgeHoverDirectionRef = useRef<'left' | 'right' | null>(null);
 
   // --- Computed Values --- 
   const effectiveView = isMobile ? "day" : view;
@@ -336,7 +323,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       if (eventCardElement) {
         const eventCard = eventCardElement.classList.contains('event-card') ? eventCardElement : eventCardElement.closest('.event-card');
         const targetEventId = eventCard?.getAttribute('data-event-id');
-        if (targetEventId) {
+      if (targetEventId) {
           const eventsInColumn = allEvents.filter(e => e.date === targetDateStr);
           const targetIndex = eventsInColumn.findIndex(e => e.id === targetEventId);
           if (targetIndex !== -1) {
@@ -411,20 +398,27 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       document.body.classList.remove('calendar-dragging');
     });
 
-  }, [customDragState, currentDate, allEvents]); // Restore original dependencies
-
-  const triggerDateChange = useCallback((direction: 'left' | 'right', isActiveHold?: boolean) => {
+  }, [customDragState, currentDate, allEvents]);
+  
+  const triggerDateChange = useCallback((direction: 'left' | 'right') => {
     if (isTransitioningRef.current || globalDragTracking.inTransition) return;
     const now = Date.now();
-    const cooldownTime = isActiveHold ? CONTINUOUS_EDGE_COOLDOWN : TRANSITION_COOLDOWN;
-    if (now - lastTransitionTimeRef.current < cooldownTime) return;
+    if (now - lastTransitionTimeRef.current < TRANSITION_COOLDOWN) return;
     
-    console.log(`Triggering date change to ${direction}${isActiveHold ? ' (active hold)' : ''}`);
+    console.log(`Triggering date change to ${direction}`);
     isTransitioningRef.current = true;
     globalDragTracking.inTransition = true;
     lastTransitionTimeRef.current = now;
     globalDragTracking.edgeDetectionEnabled = false;
     
+    // Clear edge hold timer if transition starts
+    if (edgeHoldTimerRef.current) {
+        console.log("[triggerDateChange] Clearing edge hold timer.");
+        clearTimeout(edgeHoldTimerRef.current);
+        edgeHoldTimerRef.current = null;
+    }
+    edgeHoverDirectionRef.current = null; // Reset hover direction state
+
     if (customDragState.isDragging && globalDragTracking.activeOverlay) {
       const cardElement = globalDragTracking.activeOverlay.querySelector('div');
       if (cardElement) {
@@ -448,9 +442,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       setCustomDragState(prev => ({ ...prev, event: updatedEvent, currentlyHovering: null, dropTargetId: null }));
     }
     
-    // Set the animation direction BEFORE changing the date
     prevDateAnimRef.current = { date: currentDate, direction }; 
-    
     onDateChange(newDate);
     
     setTimeout(() => {
@@ -461,44 +453,48 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           cardElement.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.15)';
         }
       }
-      
       isTransitioningRef.current = false;
       globalDragTracking.inTransition = false;
       globalDragTracking.synchronizingWithReact = false;
       console.log("Transition complete");
-      
+
       if (globalDragTracking.dropPending) {
         console.log("Processing delayed drop after transition");
-        finalizeCustomDrag();
+      finalizeCustomDrag();
         return;
       }
       
       setTimeout(() => {
         console.log("Re-enabling edge detection");
         globalDragTracking.edgeDetectionEnabled = true;
-        globalDragTracking.hasBeenAtEdge = false;
-        globalDragTracking.firstEdgeEntryTime = 0;
-      }, 200);
+        // Reset edge timer state
+        edgeHoverDirectionRef.current = null;
+        if (edgeHoldTimerRef.current) {
+           clearTimeout(edgeHoldTimerRef.current);
+           edgeHoldTimerRef.current = null;
+        } 
+      }, TRANSITION_COOLDOWN);
       
     }, 300);
-  }, [customDragState, currentDate, onDateChange, finalizeCustomDrag]); // Restore original dependencies
+  }, [customDragState, currentDate, onDateChange, finalizeCustomDrag]);
 
   const startCustomDrag = useCallback((event: KanbanEvent, clientX: number, clientY: number) => {
-    // ... (Implementation from before hoisting attempts) ...
     dayOffsetRef.current = 0;
     isTransitioningRef.current = false;
     globalDragTracking.inTransition = false;
     globalDragTracking.synchronizingWithReact = false;
     globalDragTracking.dropPending = false;
     globalDragTracking.lastDetectedColumn = event.date;
+    
+    // Reset edge detection state
     globalDragTracking.edgeDetectionEnabled = true;
-    globalDragTracking.lastEdgeDetectionTime = 0;
-    globalDragTracking.hasBeenAtEdge = false;
-    globalDragTracking.firstEdgeEntryTime = 0;
-    if (globalDragTracking.activeHoldTimer) {
-      clearTimeout(globalDragTracking.activeHoldTimer);
-      globalDragTracking.activeHoldTimer = null;
+    // Clear edge timer state on new drag start
+    if (edgeHoldTimerRef.current) { 
+      clearTimeout(edgeHoldTimerRef.current);
+      edgeHoldTimerRef.current = null;
     }
+    edgeHoverDirectionRef.current = null;
+    
     globalDragTracking.isTracking = true;
     globalDragTracking.currentPosition = { x: clientX, y: clientY };
 
@@ -562,8 +558,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     });
     document.body.style.overflow = 'hidden';
     document.body.classList.add('calendar-dragging');
-    setSelectedEvent(null);
-    console.log("Drag started with Android-like lift animation", clientX, clientY);
+    console.log("Drag started ...", clientX, clientY);
   }, []);
 
   const handleEventMouseDown = useCallback((event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => {
@@ -575,29 +570,25 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     startCustomDrag(event, clientX, clientY);
   }, [startCustomDrag]);
 
-  // --- Event Detail Modal Handlers --- 
+  // --- Event Detail Modal Handlers (Simplified) --- 
   const handleEventCardClick = useCallback((event: KanbanEvent, cardElement: HTMLElement) => {
     if (customDragState.isDragging) return;
     const rect = cardElement.getBoundingClientRect();
-    originRectRef.current = { x: rect.left, y: rect.top, width: rect.width, height: rect.height, scrollY: window.scrollY };
-    document.body.style.overflow = 'hidden';
-    setDetailViewEvent(event);
-    setDetailViewState('opening');
-    setTimeout(() => {
-      setDetailViewState('open');
-    }, 300);
+    // Set combined modal data state
+    setModalData({ 
+      event: event, 
+      originRect: { x: rect.left, y: rect.top, width: rect.width, height: rect.height, scrollY: window.scrollY }
+    });
+    document.body.style.overflow = 'hidden'; 
   }, [customDragState.isDragging]);
 
   const closeDetailView = useCallback(() => {
-    setDetailViewState('closing');
-    setTimeout(() => {
-      setDetailViewState('closed');
-      setDetailViewEvent(null);
-      originRectRef.current = null;
-      document.body.style.overflow = '';
-    }, 300);
+    // Set modal data state back to null to close
+    setModalData(null);
+    document.body.style.overflow = ''; 
   }, []);
 
+  // handleEventClick uses the simplified handlers
   const handleEventClick = useCallback((event: KanbanEvent, cardElement?: HTMLElement) => {
      if (customDragState.isDragging) return;
      let element = cardElement;
@@ -607,14 +598,12 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
      if (element) {
        handleEventCardClick(event, element);
      } else {
-       console.log('Event card element not found, opening without animation');
-       setDetailViewEvent(event);
-       setDetailViewState('open');
-       document.body.style.overflow = 'hidden';
+       // Fallback: Element not found, log error and do not open modal
+       console.error('Event card element not found. Cannot open detail view.'); 
      }
   }, [customDragState.isDragging, handleEventCardClick]);
   
-  // --- Drag Cancellation --- 
+  // cancelCustomDrag remains the same
   const cancelCustomDrag = useCallback(() => {
     if (!customDragState.isDragging) return;
     console.log("Cancelling drag (e.g., Escape key)");
@@ -650,6 +639,14 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     // Re-enable scrolling
     document.body.style.overflow = '';
     document.body.classList.remove('calendar-dragging');
+    // Clear edge hold timer on cancel
+    if (edgeHoldTimerRef.current) {
+      console.log("[cancelCustomDrag] Clearing edge hold timer.");
+      clearTimeout(edgeHoldTimerRef.current);
+      edgeHoldTimerRef.current = null;
+    }
+    edgeHoverDirectionRef.current = null;
+    globalDragTracking.isInEdgeZone = false;
   }, [customDragState.isDragging]); // Dependency on isDragging ensures latest state
 
   // --- UseEffect Hooks (Restored Order) ---
@@ -691,87 +688,107 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   }, []);
   
   useEffect(() => {
-    // ... (Original edge detection listener logic) ...
-    const handleEdgeDetection = (e: CustomEvent) => {
-      if (triggerDateChangeRef.current && !isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled) {
-        const edge = e.detail?.edge as 'left' | 'right';
-        const isActiveHold = !!e.detail?.activeHold;
-        if (edge) {
-          triggerDateChangeRef.current(edge, isActiveHold);
-        }
-      }
-    };
-    document.addEventListener('edgeDetected', handleEdgeDetection as EventListener);
-    return () => { document.removeEventListener('edgeDetected', handleEdgeDetection as EventListener); };
-  }, []); 
-
-  useEffect(() => {
-    // ... (Original pointer event listener logic for drag) ...
     if (!customDragState.isDragging) return;
-    console.log("Setting up global POINTER event handlers for drag");
+    console.log("Setting up global POINTER event handlers for drag (with stabilized finalize ref)");
+    
     const handlePointerMove = (e: PointerEvent) => {
-      globalDragTracking.currentPosition = { x: e.clientX, y: e.clientY };
-      setCustomDragState(prev => ({ ...prev, position: { x: e.clientX, y: e.clientY } }));
+       globalDragTracking.currentPosition = { x: e.clientX, y: e.clientY };
+       // Update visual position state immediately
+       setCustomDragState(prev => ({ ...prev, position: { x: e.clientX, y: e.clientY } }));
       
-      // Edge detection logic within move handler (for hover effect)
-      if (!isTransitioningRef.current && !globalDragTracking.inTransition && effectiveView === 'day') {
-        const container = document.querySelector('.calendar-container');
-        const containerRect = container ? container.getBoundingClientRect() : containerRef.current?.getBoundingClientRect();
-        
-        if (containerRect) {
-          const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
-          const leftEdgeBoundary = containerRect.left + edgeWidth;
-          const rightEdgeBoundary = containerRect.right - edgeWidth;
+       // Edge hover logic + Timer management
+       if (!isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled && effectiveView === 'day') {
+          const container = document.querySelector('.calendar-container');
+          const containerRect = container ? container.getBoundingClientRect() : containerRef.current?.getBoundingClientRect();
           
-          let currentEdge: 'left' | 'right' | null = null;
-          if (e.clientX < leftEdgeBoundary) {
-            currentEdge = 'left';
-          } else if (e.clientX > rightEdgeBoundary) {
-            currentEdge = 'right';
-          }
-          
-          // Update hover state and trigger vibration if edge changes
-          if (currentEdge !== customDragState.currentlyHovering) {
-             // ADD VIBRATION HERE:
-             if (currentEdge && navigator.vibrate) {
-                console.log(`Vibrating for edge hover: ${currentEdge}`);
-                navigator.vibrate(10); // Short vibration for hover detection
-             }
-             setCustomDragState(prev => ({ 
-               ...prev, 
-               currentlyHovering: currentEdge 
-             }));
-             // Note: Actual transition triggering is handled by the separate edgeDetected event
-          }
+          if (containerRect) {
+              const edgeWidth = containerRect.width * EDGE_ZONE_WIDTH_PERCENTAGE;
+              const leftEdgeBoundary = containerRect.left + edgeWidth;
+              const rightEdgeBoundary = containerRect.right - edgeWidth;
+              let currentEdge: 'left' | 'right' | null = null;
+              if (e.clientX < leftEdgeBoundary) currentEdge = 'left';
+              else if (e.clientX > rightEdgeBoundary) currentEdge = 'right';
+              
+              // Update visual hover state
+              if (currentEdge !== customDragState.currentlyHovering) {
+                 setCustomDragState(prev => ({ ...prev, currentlyHovering: currentEdge }));
+                 if (currentEdge && navigator.vibrate) {
+                     navigator.vibrate(10); // Vibrate on entering edge zone
+                 }
+              }
 
-          // Drop target/column detection logic (remains the same)
-          // ... (column/drop target detection) ...
-            const elementsAtPoint = document.elementsFromPoint(e.clientX, e.clientY);
-            const columnElement = elementsAtPoint.find(el => el.hasAttribute('data-date') || el.closest('[data-date]'));
-            if (columnElement) {
-                const dateAttr = columnElement.getAttribute('data-date') || columnElement.closest('[data-date]')?.getAttribute('data-date');
-                if (dateAttr && dateAttr !== globalDragTracking.lastDetectedColumn) {
-                    globalDragTracking.lastDetectedColumn = dateAttr;
-                    console.log(`Hovering over column with date: ${dateAttr}`);
-                }
-            }
-            const eventCardUnderCursor = elementsAtPoint.find(el => {
-                const card = el.closest('.event-card');
-                return card && card.getAttribute('data-event-id') && card.getAttribute('data-event-id') !== customDragState.event?.id;
-            });
-            const bottomDropZone = elementsAtPoint.find(el => el.getAttribute('data-drop-zone') === 'bottom');
-            let targetEventId = eventCardUnderCursor?.closest('.event-card')?.getAttribute('data-event-id') || null;
-            if (!targetEventId && bottomDropZone && filteredEvents.length > 0) {
-                targetEventId = filteredEvents[filteredEvents.length - 1].id;
-            }
-            if (customDragState.dropTargetId !== targetEventId) {
-                setCustomDragState(prev => ({ ...prev, dropTargetId: targetEventId }));
-            }
-        }
+              // Timer logic based on edge state change
+              if (currentEdge !== edgeHoverDirectionRef.current) {
+                  console.log(`Edge hover changed: ${edgeHoverDirectionRef.current} -> ${currentEdge}`);
+                  // Clear existing timer whenever edge state changes
+                  if (edgeHoldTimerRef.current) {
+                      console.log("Clearing existing edge hold timer due to state change.");
+                      clearTimeout(edgeHoldTimerRef.current);
+                      edgeHoldTimerRef.current = null;
+                  }
+                  
+                  edgeHoverDirectionRef.current = currentEdge; // Update tracked edge direction
+
+                  // If we entered a NEW edge zone, start the timer
+                  if (currentEdge) {
+                      console.log(`Starting ${EDGE_HOLD_DURATION}ms timer for edge: ${currentEdge}`);
+                      edgeHoldTimerRef.current = setTimeout(() => {
+                          const currentTrackedEdge = edgeHoverDirectionRef.current; // Capture edge direction at timer start
+                          console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Timer fired.`);
+                          
+                          // Check flags AGAIN before triggering
+                          if (!isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled) {
+                              // Re-check current position *now*
+                              const currentX = globalDragTracking.currentPosition.x;
+                              const container = document.querySelector('.calendar-container');
+                              if (container) {
+                                const containerRectNow = container.getBoundingClientRect();
+                                const edgeWidthNow = containerRectNow.width * EDGE_ZONE_WIDTH_PERCENTAGE;
+                                const stillAtLeft = currentX < containerRectNow.left + edgeWidthNow;
+                                const stillAtRight = currentX > containerRectNow.right - edgeWidthNow;
+                                const finalEdgeDirection = stillAtLeft ? 'left' : (stillAtRight ? 'right' : null);
+
+                                console.log(`[Edge Timer Callback - ${currentTrackedEdge}] PosCheck: currentX: ${currentX}, FinalDirection: ${finalEdgeDirection}`); 
+
+                                // Check if still at the edge the timer was started for
+                                if (finalEdgeDirection === currentTrackedEdge) {
+                                    console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Flags & Position OK. Triggering change.`);
+                                    if (triggerDateChangeRef.current && currentTrackedEdge) {
+                                       triggerDateChangeRef.current(currentTrackedEdge);
+                                    } else if (!currentTrackedEdge) {
+                                        console.warn("[Edge Timer Callback] Tracked edge was null, cannot trigger transition.")
+                                    }
+                                } else {
+                                     console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Condition failed: Moved out of original edge zone (${finalEdgeDirection}).`);
+                                }
+                              } else {
+                                 console.warn("[Edge Timer Callback] Container not found during check.");
+                              }
+                          } else {
+                              console.log(`[Edge Timer Callback - ${currentTrackedEdge}] Transition blocked by flags.`);
+                          }
+                          edgeHoldTimerRef.current = null; // Timer finished
+                          // Don't reset edgeHoverDirectionRef here, let the next move handle it
+                      }, EDGE_HOLD_DURATION);
+                  }
+              }
+
+              // Drop target detection (remains the same)
+              // ... (code to find drop target elements) ...
+          }
       }
     };
+    
     const handlePointerEnd = (e: PointerEvent) => {
       console.log(`%cPOINTER END EVENT DETECTED: ${e.type}`, "color: red; font-weight: bold;");
+      // Clear edge hold timer on drop/cancel
+      if (edgeHoldTimerRef.current) {
+         console.log("[handlePointerEnd] Clearing edge hold timer.");
+         clearTimeout(edgeHoldTimerRef.current);
+         edgeHoldTimerRef.current = null;
+      }
+      edgeHoverDirectionRef.current = null;
+      
       if (!globalDragTracking.isTracking) return;
       if (isTransitioningRef.current || globalDragTracking.inTransition) {
         console.log("%cPointer up/cancel during transition - marking drop as pending.", "color: orange;");
@@ -779,28 +796,42 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         return;
       }
       console.log("%cFinalizing drag immediately on pointer event:", "color: green;", e.type);
-      finalizeCustomDrag();
+      if (finalizeCustomDragRef.current) {
+          finalizeCustomDragRef.current(); 
+      }
     };
+    
+    // Listener setup
     document.addEventListener('pointermove', handlePointerMove, { capture: true });
     document.addEventListener('pointerup', handlePointerEnd, { capture: true });
     document.addEventListener('pointercancel', handlePointerEnd, { capture: true });
     document.body.style.userSelect = 'none';
+    
+    // Cleanup
     return () => {
       console.log("Removing global POINTER event handlers for drag");
       document.removeEventListener('pointermove', handlePointerMove, { capture: true });
       document.removeEventListener('pointerup', handlePointerEnd, { capture: true });
       document.removeEventListener('pointercancel', handlePointerEnd, { capture: true });
       document.body.style.userSelect = '';
+       if (edgeHoldTimerRef.current) {
+          console.log("[useEffect Cleanup] Clearing edge hold timer.");
+          clearTimeout(edgeHoldTimerRef.current);
+          edgeHoldTimerRef.current = null;
+       }
+       edgeHoverDirectionRef.current = null;
     };
-  }, [customDragState.isDragging, finalizeCustomDrag]); 
+   }, [customDragState.isDragging, effectiveView]);
 
   useEffect(() => {
-    // Assign triggerDateChange to ref - MUST be after triggerDateChange is defined
+    finalizeCustomDragRef.current = finalizeCustomDrag;
+  }, [finalizeCustomDrag]);
+
+  useEffect(() => {
     triggerDateChangeRef.current = triggerDateChange;
   }, [triggerDateChange]);
 
   useEffect(() => {
-    // Update animation ref for direction
     prevDateAnimRef.current = { ...prevDateAnimRef.current, date: currentDate };
   }, [currentDate]);
   
@@ -934,355 +965,14 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           )}
         </motion.div>
       </AnimatePresence>
-      
-      {/* Escape key handler for cancelling drag */}
-      {customDragState.isDragging && (
-        <div
-          style={{ position: 'fixed', top: '-9999px', left: '-9999px' }} 
-          ref={(el) => el?.focus()}
-          tabIndex={-1}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              cancelCustomDrag();
-            }
-          }}
-        />
-      )}
-      
-      {/* Full-screen detailed event view */}
-      {detailViewEvent && (
-        <AnimatePresence mode="wait">
-          <motion.div 
-            key="modal-backdrop"
-            className="fixed inset-0 z-[9999]"
-            initial={{ backgroundColor: 'rgba(0, 0, 0, 0)', backdropFilter: 'blur(0px)' }}
-            animate={{ 
-              backgroundColor: 'rgba(0, 0, 0, 0.85)', 
-              backdropFilter: 'blur(8px)'
-            }}
-            exit={{ 
-              backgroundColor: 'rgba(0, 0, 0, 0)', 
-              backdropFilter: 'blur(0px)',
-              transition: { duration: 0.5, ease: [0.32, 0.72, 0, 1] }
-            }}
-            transition={{ 
-              duration: 0.5, 
-              ease: [0.22, 1, 0.36, 1]
-            }}
-            onClick={closeDetailView}
-          >
-            <motion.div 
-              key="modal-content"
-              className="bg-white w-full h-full overflow-hidden fixed top-0 left-0"
-              style={{
-                originX: originRectRef.current ? (originRectRef.current.x + (originRectRef.current.width / 2)) / window.innerWidth : 0.5,
-                originY: originRectRef.current ? (originRectRef.current.y + (originRectRef.current.height / 2)) / window.innerHeight : 0.5,
-              }}
-              initial={{ 
-                borderRadius: '12px',
-                x: originRectRef.current?.x || 0,
-                y: originRectRef.current ? (originRectRef.current.y - window.scrollY + originRectRef.current.scrollY) : 0,
-                width: originRectRef.current?.width || '100%',
-                height: originRectRef.current?.height || '100%',
-                opacity: 1,
-                boxShadow: '0 0 0 rgba(0,0,0,0)',
-              }}
-              animate={{ 
-                borderRadius: 0,
-                x: 0,
-                y: 0,
-                width: '100%',
-                height: '100%',
-                opacity: 1,
-                boxShadow: '0 30px 60px rgba(0,0,0,0.3)',
-              }}
-              exit={{ 
-                borderRadius: '12px',
-                x: originRectRef.current?.x || 0,
-                y: originRectRef.current ? (originRectRef.current.y - window.scrollY + originRectRef.current.scrollY) : 0,
-                width: originRectRef.current?.width || 0,
-                height: originRectRef.current?.height || 0,
-                opacity: 0,
-                boxShadow: '0 10px 25px rgba(0,0,0,0.1)',
-              }}
-              transition={{ 
-                type: "spring",
-                damping: 25, 
-                stiffness: 300,
-                mass: 0.85,
-              }}
-              onClick={e => e.stopPropagation()}
-            >
-              <motion.div 
-                className="h-full w-full overflow-auto"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                {/* Hero header section with enhanced animations */}
-                <div className="relative w-full overflow-hidden" style={{ height: detailViewEvent.imageUrl ? '45vh' : '35vh' }}>
-                  {detailViewEvent.imageUrl ? (
-                    <motion.div 
-                      className="absolute inset-0"
-                      initial={{ opacity: 0.7 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0.7 }}
-                      transition={{ duration: 0.6 }}
-                    >
-                      {/* Background image with more dramatic scaling effect */}
-                      <motion.div 
-                        className="absolute inset-0 bg-cover bg-center"
-                        style={{ backgroundImage: `url(${detailViewEvent.imageUrl})` }}
-                        initial={{ scale: 1.1, filter: 'brightness(0.8) saturate(0.9)' }}
-                        animate={{ 
-                          scale: 1.05, 
-                          filter: 'brightness(0.9) saturate(1.1)' 
-                        }}
-                        exit={{ 
-                          scale: 1.15, 
-                          filter: 'brightness(0.8) saturate(0.9)',
-                          transition: { duration: 0.6 }
-                        }}
-                        transition={{ 
-                          duration: 1.2,
-                          ease: [0.22, 1, 0.36, 1]
-                        }}
-                      />
-                      
-                      {/* Enhanced gradient overlay with motion */}
-                      <motion.div 
-                        className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/10 to-black/70"
-                        initial={{ opacity: 0.5 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0.3 }}
-                        transition={{ duration: 0.8 }}
-                      />
-                    </motion.div>
-                  ) : (
-                    <motion.div 
-                      className="absolute inset-0 bg-gradient-to-br from-blue-600 to-indigo-800"
-                      initial={{ opacity: 0.8, background: "linear-gradient(to bottom right, #2563eb, #4338ca)" }}
-                      animate={{ 
-                        opacity: 1, 
-                        background: "linear-gradient(to bottom right, #3b82f6, #4f46e5)"
-                      }}
-                      exit={{ 
-                        opacity: 0.8, 
-                        background: "linear-gradient(to bottom right, #2563eb, #4338ca)"
-                      }}
-                      transition={{ duration: 0.8 }}
-                    />
-                  )}
-                  
-                  {/* Title and time info with orchestrated staggered animation */}
-                  <motion.div 
-                    className="absolute bottom-0 left-0 w-full p-6 pb-8 text-white"
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ 
-                      opacity: 0, 
-                      y: 20,
-                      transition: { duration: 0.25, ease: "easeIn" }
-                    }}
-                    transition={{ 
-                      duration: 0.5,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay: 0.15
-                    }}
-                  >
-                    <motion.div 
-                      className="flex items-center gap-2 text-white/90 mb-2 text-sm"
-                      initial={{ opacity: 0, y: 15, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ 
-                        opacity: 0, 
-                        y: 10, 
-                        scale: 0.95,
-                        transition: { duration: 0.2, ease: "easeIn" }
-                      }}
-                      transition={{ 
-                        duration: 0.4,
-                        ease: [0.22, 1, 0.36, 1],
-                        delay: 0.25
-                      }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <circle cx="12" cy="12" r="10" />
-                        <path d="M12 6v6l4 2" />
-                      </svg>
-                      <span>{detailViewEvent.time}</span>
-                      <span className="mx-1">•</span>
-                      <span>{detailViewEvent.date}</span>
-                    </motion.div>
-                    
-                    <motion.h1 
-                      className="text-3xl font-bold text-white"
-                      initial={{ opacity: 0, y: 20, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ 
-                        opacity: 0, 
-                        y: 15, 
-                        scale: 0.95,
-                        transition: { duration: 0.2, ease: "easeIn" }
-                      }}
-                      transition={{ 
-                        duration: 0.5,
-                        ease: [0.22, 1, 0.36, 1],
-                        delay: 0.35
-                      }}
-                      style={{ textShadow: '0 2px 10px rgba(0,0,0,0.15)' }}
-                    >
-                      {detailViewEvent.title}
-                    </motion.h1>
-                  </motion.div>
-                  
-                  {/* Close button with enhanced animation */}
-                  <motion.button
-                    className="absolute top-6 right-6 w-10 h-10 rounded-full bg-black/40 flex items-center justify-center text-white"
-                    onClick={closeDetailView}
-                    initial={{ opacity: 0, y: -20, scale: 0.8, rotate: -90 }}
-                    animate={{ opacity: 1, y: 0, scale: 1, rotate: 0 }}
-                    exit={{ 
-                      opacity: 0, 
-                      y: -15, 
-                      scale: 0.8, 
-                      rotate: -90,
-                      transition: { duration: 0.3, ease: [0.32, 0, 0.67, 0] }
-                    }}
-                    transition={{ 
-                      duration: 0.5,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay: 0.5
-                    }}
-                    style={{
-                      backdropFilter: 'blur(3px)',
-                      WebkitBackdropFilter: 'blur(3px)'
-                    }}
-                    whileHover={{ 
-                      scale: 1.1, 
-                      backgroundColor: 'rgba(0, 0, 0, 0.6)',
-                      boxShadow: '0 0 20px rgba(0,0,0,0.2)'
-                    }}
-                    whileTap={{ scale: 0.9 }}
-                  >
-                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 6L6 18M6 6l12 12" />
-                    </svg>
-                  </motion.button>
-                </div>
-                
-                {/* Content area with orchestrated staggered animations */}
-                <div className="p-6 px-8 bg-white">
-                  {/* Description with enhanced animation */}
-                  <motion.div 
-                    className="mb-8"
-                    initial={{ opacity: 0, y: 40, x: -10 }}
-                    animate={{ opacity: 1, y: 0, x: 0 }}
-                    exit={{ 
-                      opacity: 0, 
-                      y: 30, 
-                      x: -5,
-                      transition: { duration: 0.25, ease: "easeIn" }
-                    }}
-                    transition={{ 
-                      duration: 0.6,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay: 0.45
-                    }}
-                  >
-                    <h2 className="text-xl font-semibold text-gray-800 mb-3">Description</h2>
-                    <p className="text-gray-600 leading-relaxed">
-                      {detailViewEvent.description || "No description available for this event."}
-                    </p>
-                  </motion.div>
-                  
-                  {/* Location section with enhanced animation */}
-                  <motion.div 
-                    className="mb-8"
-                    initial={{ opacity: 0, y: 45, x: -10 }}
-                    animate={{ opacity: 1, y: 0, x: 0 }}
-                    exit={{ 
-                      opacity: 0, 
-                      y: 35, 
-                      x: -5,
-                      transition: { duration: 0.25, ease: "easeIn" }
-                    }}
-                    transition={{ 
-                      duration: 0.6,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay: 0.55
-                    }}
-                  >
-                    <h2 className="text-xl font-semibold text-gray-800 mb-3">Location</h2>
-                    <div className="bg-gray-50 rounded-xl p-4 flex items-center gap-3 shadow-sm border border-gray-100">
-                      <div className="bg-blue-100 text-blue-500 p-2 rounded-full">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M12 22s-8-4.5-8-11.8a8 8 0 0 1 16 0c0 7.3-8 11.8-8 11.8z" />
-                          <circle cx="12" cy="10" r="3" />
-                        </svg>
-                      </div>
-                      <span className="text-gray-700">Meeting Room {Math.floor(Math.random() * 10) + 1}</span>
-                    </div>
-                  </motion.div>
-                  
-                  {/* Action buttons with enhanced animation */}
-                  <motion.div 
-                    className="flex gap-3 pt-4 border-t border-gray-200"
-                    initial={{ opacity: 0, y: 50, x: -10 }}
-                    animate={{ opacity: 1, y: 0, x: 0 }}
-                    exit={{ 
-                      opacity: 0, 
-                      y: 40, 
-                      x: -5,
-                      transition: { duration: 0.25, ease: "easeIn" }
-                    }}
-                    transition={{ 
-                      duration: 0.6,
-                      ease: [0.22, 1, 0.36, 1],
-                      delay: 0.65
-                    }}
-                  >
-                    <motion.button 
-                      className="flex-1 py-3.5 px-4 bg-gray-100 rounded-xl text-gray-700 font-medium flex items-center justify-center gap-2"
-                      onClick={closeDetailView}
-                      whileHover={{ 
-                        backgroundColor: "#e5e7eb", 
-                        scale: 1.02,
-                        boxShadow: '0 4px 12px rgba(0,0,0,0.08)'
-                      }}
-                      whileTap={{ scale: 0.97 }}
-                      transition={{ duration: 0.2 }}
-                    >
-                      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <polyline points="15 18 9 12 15 6" />
-                      </svg>
-                      Back
-                    </motion.button>
-                  </motion.div>
-                </div>
-              </motion.div>
-            </motion.div>
-          </motion.div>
-        </AnimatePresence>
-      )}
-      <style jsx global>{`
-        @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slide-up {
-          from { transform: translateY(20px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-        @keyframes scale-in {
-          from { transform: scale(0.8); opacity: 0; }
-          to { transform: scale(1); opacity: 1; }
-        }
-        .modal-open { animation: fade-in 400ms forwards cubic-bezier(0.16, 1, 0.3, 1); }
-        .modal-close { animation: fade-in 400ms forwards cubic-bezier(0.16, 1, 0.3, 1) reverse; }
-        @media (prefers-reduced-motion: reduce) { * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; } }
-      `}</style>
+
+      {/* RENDER THE NEW MODAL COMPONENT with simplified props */}
+      <EventDetailModal 
+        event={modalData?.event ?? null} // Pass event from modalData
+        isOpen={!!modalData} // Modal is open if modalData is not null
+        onClose={closeDetailView}
+        originRect={modalData?.originRect ?? null} // Pass originRect from modalData
+      />
     </div>
   );
 };

@@ -3,33 +3,13 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { format } from "date-fns";
 import { motion } from "framer-motion";
-import { KanbanEvent } from "@/app/lib/utils";
-import EventCard from "./EventCard";
+import EventCard from "../EventCard";
 import { cn } from "@/app/lib/utils";
-
-interface CalendarDayViewProps {
-  currentDate: Date;
-  dayEvents: KanbanEvent[];
-  customDragState: {
-    isDragging: boolean;
-    event: KanbanEvent | null;
-    position: { x: number, y: number } | null;
-    startedOn: string | null;
-    currentlyHovering: 'left' | 'right' | null;
-    dropTargetId: string | null;
-  };
-  dayOffset: number;
-  debugInfo: {
-    transitionsAttempted: number;
-    transitionsCompleted: number;
-  };
-  onEventClick: (event: KanbanEvent) => void;
-  onEventMouseDown: (event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => void;
-  containerRef?: React.RefObject<HTMLDivElement>;
-}
+import type { KanbanEvent, CalendarDayViewProps, CustomDragState, DebugInfo } from "@/app/types/calendar";
 
 // Constants
-const LONG_PRESS_DURATION = 400; // milliseconds
+const SCROLL_THRESHOLD = 10; // pixels of vertical movement to detect scroll intent
+const LONG_PRESS_DURATION = 400; // ms for mobile long press to initiate drag
 
 const CalendarDayView = ({
   currentDate,

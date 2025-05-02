@@ -1,10 +1,10 @@
 "use client";
 
 import { format, isSameDay, startOfWeek, endOfWeek, eachDayOfInterval } from "date-fns";
-import { KanbanEvent } from "@/app/lib/utils";
 import { cn } from "@/app/lib/utils";
-import { useState, useCallback, useEffect } from "react";
-import EventCard from "./EventCard";
+import { useState, useEffect } from "react";
+import EventCard from "../EventCard";
+import type { KanbanEvent, CalendarWeekViewProps, ColumnProps, CustomDragState } from "@/app/types/calendar";
 
 // Column component for each day
 const Column = ({
@@ -19,19 +19,7 @@ const Column = ({
   isDropTarget,
   isFirstOfMonth,
   monthShort
-}: {
-  dateStr: string;
-  dayName: string;
-  dayNumber: string;
-  isToday: boolean;
-  events: KanbanEvent[];
-  onEventClick: (event: KanbanEvent) => void;
-  onEventMouseDown: (event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => void;
-  customDragState: any;
-  isDropTarget: boolean;
-  isFirstOfMonth: boolean;
-  monthShort: string;
-}) => {
+}: ColumnProps) => {
   return (
     <div 
       className={cn(
@@ -117,21 +105,6 @@ const Column = ({
     </div>
   );
 };
-
-interface CalendarWeekViewProps {
-  currentDate: Date;
-  eventsByDate: { [date: string]: KanbanEvent[] };
-  customDragState: {
-    isDragging: boolean;
-    event: KanbanEvent | null;
-    position: { x: number, y: number } | null;
-    startedOn: string | null;
-    currentlyHovering: 'left' | 'right' | null;
-    dropTargetId: string | null;
-  };
-  onEventClick: (event: KanbanEvent) => void;
-  onEventMouseDown: (event: KanbanEvent, e: React.MouseEvent | React.TouchEvent) => void;
-}
 
 const CalendarWeekView = ({
   currentDate,

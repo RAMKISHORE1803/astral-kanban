@@ -1,20 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { format, addDays, subDays, startOfWeek, endOfWeek, eachDayOfInterval, isSameDay } from "date-fns";
-import { motion, AnimatePresence } from "framer-motion";
-import { ChevronLeft, ChevronRight, CalendarPlus } from "lucide-react";
+import { motion } from "framer-motion";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import Logo from "../ui/Logo";
 import Button from "../ui/Button";
 import { cn } from "@/app/lib/utils";
 import { useMediaQuery } from "@/app/lib/hooks/useMediaQuery";
-
-interface HeaderProps {
-  currentDate: Date;
-  onDateChange: (date: Date) => void;
-  view: "week" | "day";
-  onViewChange: (view: "week" | "day") => void;
-}
+import type { HeaderProps } from "@/app/types/calendar";
 
 const Header = ({ currentDate, onDateChange, view, onViewChange }: HeaderProps) => {
   const isMobile = useMediaQuery("(max-width: 768px)");
@@ -22,7 +15,6 @@ const Header = ({ currentDate, onDateChange, view, onViewChange }: HeaderProps) 
   const weekEnd = endOfWeek(currentDate, { weekStartsOn: 1 });
   const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
 
-  // Navigation logic remains the same
   const navigateToPrevious = () => {
     if (isMobile || view === "day") {
       onDateChange(subDays(currentDate, 1));
