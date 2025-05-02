@@ -180,7 +180,9 @@ const CalendarDayView = ({
         style={{
           height: "calc(100% - 56px)", /* Calculated height based on parent height minus header */
           maxHeight: "calc(100% - 56px)",
-          paddingBottom: "80px" /* Extra padding at the bottom to ensure content is fully scrollable */
+          paddingBottom: "80px", /* Extra padding at the bottom to ensure content is fully scrollable */
+          touchAction: "pan-y", /* Explicitly enable vertical scrolling */
+          WebkitOverflowScrolling: "touch" /* For better scroll performance on iOS */
         }}
       >
         {/* Scroll shadow indicators */}

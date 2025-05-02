@@ -143,7 +143,7 @@ const EventCard: React.FC<EventCardProps> = ({
       // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
       style={{
-        touchAction: 'auto', // Allow scrolling on the main card
+        touchAction: 'pan-y', // Explicitly allow vertical scrolling
       }}
     >
       {/* Drag Handle - only shown on day view/mobile */}
