@@ -396,6 +396,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     globalDragTracking.synchronizingWithReact = true;
     reactSyncRef.current.lastStateUpdate = Date.now();
     
+    // Provide stronger vibration feedback when dropping
+    if (navigator.vibrate) navigator.vibrate([15, 10, 40]);
+    
     flushSync(() => {
       // Update the event with new date
       const eventsWithoutDragged = allEvents.filter(e => e.id !== droppedEvent.id);
@@ -428,7 +431,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           if (globalDragTracking.activeOverlay) {
             globalDragTracking.activeOverlay.style.display = 'none';
           }
-          if (navigator.vibrate) navigator.vibrate(10);
+          // Vibration confirmation when card is dropped into place
+          if (navigator.vibrate) navigator.vibrate(25);
           globalDragTracking.synchronizingWithReact = false;
         });
         newCardElement.classList.add('pulse-highlight');
@@ -494,7 +498,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     reactSyncRef.current.targetDateAfterTransition = newDateStr;
     globalDragTracking.lastDetectedColumn = newDateStr;
     dayOffsetRef.current += direction === 'left' ? -1 : 1;
-    if (navigator.vibrate) navigator.vibrate(25);
+    
+    // Enhanced vibration feedback for transition start (stronger pattern for mobile)
+    if (navigator.vibrate) navigator.vibrate([30, 20, 50]);
     
     if (customDragState.isDragging && customDragState.event) {
       const updatedEvent = { ...customDragState.event, date: newDateStr };
@@ -518,6 +524,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       globalDragTracking.inTransition = false;
       globalDragTracking.synchronizingWithReact = false;
       console.log("Transition complete");
+
+      // Vibration feedback when transition completes
+      if (navigator.vibrate) navigator.vibrate(20);
 
       if (globalDragTracking.dropPending) {
         console.log("Processing delayed drop after transition");
