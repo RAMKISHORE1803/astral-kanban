@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from "react";
 import { format } from "date-fns";
 import { motion, AnimatePresence } from "framer-motion";
 import EventCard from "../EventCard";
@@ -36,6 +36,17 @@ const CalendarDayView = ({
   // Reference to content area for scrolling
   const contentRef = useRef<HTMLDivElement>(null);
   
+  // State for custom scrollbar
+  const [scrollThumbState, setScrollThumbState] = useState({
+    thumbHeight: 0,
+    thumbTop: 0,
+    isScrolling: false, // Track if the main content is scrolling
+    isVisible: false, // Whether the custom scrollbar should be visible
+  });
+  const [isThumbDragging, setIsThumbDragging] = useState(false);
+  const thumbDragRef = useRef({ startY: 0, startScrollTop: 0 });
+  const scrollTimerRef = useRef<NodeJS.Timeout | null>(null); // Timer to hide scrollbar
+
   // Effect to handle date changes
   useEffect(() => {
     // Only run this effect if the date actually changed (not on initial mount)
@@ -151,6 +162,156 @@ const CalendarDayView = ({
   
   const formattedDate = format(currentDate, "yyyy-MM-dd");
   
+  // Function to update thumb position and visibility
+  const updateThumb = useCallback(() => {
+    const contentEl = contentRef.current;
+    if (!contentEl) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = contentEl;
+    const isScrollable = scrollHeight > clientHeight;
+
+    if (!isScrollable) {
+      setScrollThumbState(prev => prev.isVisible ? { ...prev, isVisible: false } : prev);
+      return;
+    }
+
+    const minThumbHeight = 30; // Minimum pixels
+    const calculatedThumbHeight = Math.max(minThumbHeight, clientHeight * (clientHeight / scrollHeight));
+    const scrollableDist = scrollHeight - clientHeight;
+    const thumbTravelDist = clientHeight - calculatedThumbHeight;
+    const thumbTop = scrollableDist > 0 ? (scrollTop / scrollableDist) * thumbTravelDist : 0;
+
+    setScrollThumbState(prev => ({
+      ...prev, // Keep existing isScrolling state
+      thumbHeight: calculatedThumbHeight,
+      thumbTop: thumbTop,
+      isVisible: true,
+    }));
+  }, []);
+
+  // Effect to update thumb on resize or content change
+  useLayoutEffect(() => {
+    updateThumb(); // Initial update
+    
+    const contentEl = contentRef.current;
+    if (!contentEl) return;
+
+    const observer = new ResizeObserver(updateThumb);
+    observer.observe(contentEl);
+
+    const mutationObserver = new MutationObserver(updateThumb);
+    const config = { childList: true, subtree: true, characterData: true }; // Observe content changes
+    mutationObserver.observe(contentEl, config);
+
+    return () => {
+      observer.disconnect();
+      mutationObserver.disconnect();
+      if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    };
+  }, [updateThumb, dayEvents]); // Rerun when events change, or updateThumb changes
+
+  // Handle scrolling of the main content area
+  const handleScroll = useCallback(() => {
+    if (!isThumbDragging) { // Only update thumb if scroll wasn't initiated by thumb drag
+      updateThumb();
+    }
+    // Indicate scrolling for visual feedback (e.g., show scrollbar)
+    setScrollThumbState(prev => ({ ...prev, isScrolling: true }));
+    
+    // Clear previous timer
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    // Set new timer to hide scrollbar after scrolling stops
+    scrollTimerRef.current = setTimeout(() => 
+        setScrollThumbState(prev => ({ ...prev, isScrolling: false })), 
+        1500
+    );
+  }, [updateThumb, isThumbDragging]);
+
+  // --- Thumb Drag Handlers ---
+  const handleThumbMouseDown = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    e.preventDefault(); 
+    e.stopPropagation();
+    if (!contentRef.current) return;
+
+    setIsThumbDragging(true);
+    thumbDragRef.current = {
+      startY: e.clientY,
+      startScrollTop: contentRef.current.scrollTop,
+    };
+    document.body.style.cursor = 'grabbing';
+    document.body.style.userSelect = 'none';
+  }, []);
+
+  const handleThumbTouchStart = useCallback((e: React.TouchEvent<HTMLDivElement>) => {
+     e.stopPropagation(); 
+     if (!contentRef.current) return;
+
+     setIsThumbDragging(true);
+     thumbDragRef.current = {
+       startY: e.touches[0].clientY,
+       startScrollTop: contentRef.current.scrollTop,
+     };
+     document.body.style.userSelect = 'none';
+   }, []);
+
+  // Global move handler during thumb drag
+  const handleThumbMove = useCallback((clientY: number) => {
+    if (!isThumbDragging || !contentRef.current) return;
+
+    const { startY, startScrollTop } = thumbDragRef.current;
+    const deltaY = clientY - startY;
+
+    const contentEl = contentRef.current;
+    const { scrollHeight, clientHeight } = contentEl;
+    const thumbHeight = scrollThumbState.thumbHeight; // Read from state
+
+    if (scrollHeight <= clientHeight) return; // Not scrollable
+
+    const scrollableDist = scrollHeight - clientHeight;
+    const thumbTravelDist = clientHeight - thumbHeight;
+    const deltaScroll = thumbTravelDist > 0 ? (deltaY / thumbTravelDist) * scrollableDist : 0;
+    const newScrollTop = Math.max(0, Math.min(startScrollTop + deltaScroll, scrollableDist));
+
+    contentEl.scrollTop = newScrollTop;
+    // Manually update thumb state during drag
+    const newThumbTop = thumbTravelDist > 0 ? (newScrollTop / scrollableDist) * thumbTravelDist : 0;
+     setScrollThumbState(prev => ({
+       ...prev,
+       thumbTop: newThumbTop,
+     }));
+  }, [isThumbDragging, scrollThumbState.thumbHeight]);
+
+  // Global end handler for thumb drag
+  const handleThumbEnd = useCallback(() => {
+    if (isThumbDragging) {
+      setIsThumbDragging(false);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+  }, [isThumbDragging]);
+
+  // Add/remove global listeners for thumb dragging
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => handleThumbMove(e.clientY);
+    const handleTouchMove = (e: TouchEvent) => handleThumbMove(e.touches[0].clientY);
+
+    if (isThumbDragging) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('touchmove', handleTouchMove);
+      document.addEventListener('mouseup', handleThumbEnd);
+      document.addEventListener('touchend', handleThumbEnd);
+      document.addEventListener('mouseleave', handleThumbEnd); 
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('touchmove', handleTouchMove);
+      document.removeEventListener('mouseup', handleThumbEnd);
+      document.removeEventListener('touchend', handleThumbEnd);
+      document.removeEventListener('mouseleave', handleThumbEnd);
+    };
+  }, [isThumbDragging, handleThumbMove, handleThumbEnd]);
+
   return (
     <div className="relative h-full overflow-hidden flex flex-col" ref={containerRef}>
       {/* Simplified Edge indicators - arrows only, no text labels */}
@@ -247,55 +408,85 @@ const CalendarDayView = ({
         </h3>
       </div>
 
-      {/* Main content container - scrollable */}
-      <div 
-        ref={contentRef}
-        className={cn(
-          "px-4 py-4 overflow-y-auto flex-1 calendar-day-view-content",
-          isEdgeHovering && "opacity-90 transition-opacity duration-200" // Fade content during edge hovering
-        )}
-        style={{
-          overscrollBehavior: 'contain', // Prevent pull-to-refresh on iOS
-          touchAction: customDragState.isDragging ? 'none' : 'pan-y', // Allow vertical scrolling only when not dragging
-        }}
-      >
-        {dayEvents.length === 0 ? (
-          <div className="flex items-center justify-center h-32 text-gray-400">
-            No events for this day
-          </div>
-        ) : (
-          <div className="space-y-3 relative pb-10">
-            {dayEvents.map((event) => (
-              <div
-                key={event.id}
-                className="relative"
-                data-event-id={event.id}
-              >
-                <EventCard
-                  showViewDetailsButton={true}
-                  event={event}
-                  isSource={customDragState.event?.id === event.id}
-                  isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
-                  isDropTarget={false}
-                  onClick={() => handleClick(event)}
-                  onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
-                  onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
-                  onTouchEnd={() => handleTouchEnd(event)}
-                />
-              </div>
-            ))}
-            {/* Extra padding at the bottom for comfortable scrolling */}
-            <div className="h-10"></div>
-          </div>
-        )}
-      </div>
-      
-      {/* Scroll indicator tip - appears briefly when user first views the list */}
-      {dayEvents.length > 3 && (
-        <div className="scroll-indicator">
-          <div className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none bg-gradient-to-t from-white to-transparent opacity-70" />
+      {/* Wrapper for content and custom scrollbar */}
+      <div className="flex-1 flex overflow-hidden relative h-full">
+
+        {/* Main content container - scrollable */}
+        <div 
+          ref={contentRef}
+          className={cn(
+            "px-4 py-4 overflow-y-auto flex-1 calendar-day-view-content max-h-[85vh]",
+            "min-h-0", // Allow shrinking below content size
+            isEdgeHovering && "opacity-90 transition-opacity duration-200" // Fade content during edge hovering
+          )}
+          style={{
+            overscrollBehavior: 'contain', // Prevent pull-to-refresh on iOS
+            touchAction: customDragState.isDragging ? 'none' : 'auto', // Changed pan-y to auto when not dragging
+          }}
+          onScroll={handleScroll} // Re-enabled scroll listener
+        >
+          {dayEvents.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-gray-400">
+              No events for this day
+            </div>
+          ) : (
+            <div className="space-y-3 relative pb-10">
+              {dayEvents.map((event) => (
+                <div
+                  key={event.id}
+                  className="relative"
+                  data-event-id={event.id}
+                >
+                  <EventCard
+                    showViewDetailsButton={true}
+                    event={event}
+                    isSource={customDragState.event?.id === event.id}
+                    isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
+                    isDropTarget={false}
+                    onClick={() => handleClick(event)}
+                    onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
+                    onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
+                    onTouchEnd={() => handleTouchEnd(event)}
+                  />
+                </div>
+              ))}
+              {/* Extra padding at the bottom for comfortable scrolling */}
+              <div className="h-10"></div>
+            </div>
+          )}
         </div>
-      )}
+        
+        {/* Scroll indicator tip - appears briefly when user first views the list */}
+        {dayEvents.length > 3 && (
+          <div className="scroll-indicator">
+            <div className="absolute bottom-0 left-0 right-0 h-20 pointer-events-none bg-gradient-to-t from-white to-transparent opacity-70" />
+          </div>
+        )}
+
+        {/* Custom Scrollbar Area - Re-enabled */}
+        {scrollThumbState.isVisible && (
+           <div className="absolute top-16 right-0 bottom-0 w-2.5 flex justify-center py-1 pointer-events-none z-20">
+             <div
+                className="relative w-1.5 h-[calc(100%-4rem)] bg-slate-200 rounded-full opacity-50"
+             >
+               <div
+                  className={cn(
+                    "absolute left-0 w-full bg-slate-500 rounded-full cursor-grab active:cursor-grabbing",
+                    "transition-opacity duration-200",
+                    (scrollThumbState.isScrolling || isThumbDragging) ? "opacity-70" : "opacity-50 hover:opacity-70",
+                    "pointer-events-auto"
+                  )}
+                  style={{
+                    height: `${scrollThumbState.thumbHeight}px`,
+                    top: `${scrollThumbState.thumbTop}px`,
+                  }}
+                  onMouseDown={handleThumbMouseDown}
+                  onTouchStart={handleThumbTouchStart}
+                />
+             </div>
+           </div>
+        )}
+      </div> {/* End Main content container */} 
     </div>
   );
 };

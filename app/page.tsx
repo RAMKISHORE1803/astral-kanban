@@ -32,14 +32,14 @@ export default function Home() {
   // The view is now determined solely by the device size
 
   return (
-    <main className="flex h-screen max-h-screen flex-col bg-astral-light-gray">
+    <main className="flex h-screen max-h-screen flex-col bg-astral-light-gray overflow-hidden">
       <Header 
         currentDate={currentDate}
         onDateChange={handleDateChange}
         view={view}
         onViewChange={(newView) => {}} // Empty function since we no longer allow toggling
       />
-      <div className="flex-1 p-0 md:p-4 overflow-hidden">
+      <div className="flex-1 p-0 md:p-4 overflow-hidden relative">
         <CalendarContainer 
           currentDate={currentDate}
           view={view}

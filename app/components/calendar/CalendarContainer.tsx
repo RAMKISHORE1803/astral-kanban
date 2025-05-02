@@ -288,7 +288,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     originalTargetRect: null as DOMRect | null,
     originalEvent: null as KanbanEvent | null,
     dragThresholdMet: false,
-    dragStarted: false
+    dragStarted: false,
+    mouseDownTarget: null as HTMLElement | null,
   });
 
   // --- Computed Values --- 
@@ -678,6 +679,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       mouseStateRef.current = {
         mouseDownEvent: mouseEvent,
         originalTargetRect: (e.currentTarget as HTMLElement).getBoundingClientRect(),
+        mouseDownTarget: e.currentTarget as HTMLElement,
         originalEvent: event,
         dragThresholdMet: false,
         dragStarted: false
@@ -771,7 +773,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       originalTargetRect: null,
       originalEvent: null,
       dragThresholdMet: false,
-      dragStarted: false
+      dragStarted: false,
+      mouseDownTarget: null,
     };
     
     // Reset global flags
@@ -879,8 +882,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       if (distance >= globalDragTracking.dragThreshold) {
         mouseStateRef.current.dragThresholdMet = true;
         
-        // Only start drag if not already started
-        if (!mouseStateRef.current.dragStarted && mouseStateRef.current.originalEvent) {
+        // Only start drag if not already started and we have the event and target
+        if (!mouseStateRef.current.dragStarted && mouseStateRef.current.originalEvent && mouseStateRef.current.mouseDownTarget) {
           mouseStateRef.current.dragStarted = true;
           console.log("Mouse drag threshold met. Starting drag.");
           
@@ -889,7 +892,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
             mouseStateRef.current.originalEvent, 
             e.clientX, 
             e.clientY,
-            mouseStateRef.current.mouseDownEvent.target as HTMLElement
+            mouseStateRef.current.mouseDownTarget
           );
         }
       }
@@ -909,7 +912,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         originalTargetRect: null,
         originalEvent: null,
         dragThresholdMet: false,
-        dragStarted: false
+        dragStarted: false,
+        mouseDownTarget: null,
       };
     };
     
@@ -922,7 +926,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           originalTargetRect: null,
           originalEvent: null,
           dragThresholdMet: false,
-          dragStarted: false
+          dragStarted: false,
+          mouseDownTarget: null,
         };
       }
     };
@@ -1118,6 +1123,13 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Force isDragging to false immediately after mount
+  useEffect(() => {
+    console.log("[Mount Effect] Forcing isDragging: false");
+    setCustomDragState(prev => ({ ...prev, isDragging: false }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // --- Render Logic --- 
 
   // Define animation variants (Keep these)
@@ -1166,6 +1178,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     exit: { opacity: 0 },
   };
 
+  // Debug log for dragging state
+  console.log("CalendarContainer render - isDragging:", customDragState.isDragging);
+
   return (
     <div
       ref={containerRef}
@@ -1192,45 +1207,29 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         </div>
       )}
       
-      <AnimatePresence 
-        initial={false} 
-        mode="wait" 
-        custom={prevDateAnimRef.current.direction} // Pass direction
-      >
-        <motion.div
-          key={format(currentDate, 'yyyy-MM-dd')}
-          custom={prevDateAnimRef.current.direction} // Pass direction again
-          variants={effectiveView === 'day' && prevDateAnimRef.current.direction ? iosSlideVariants : fadeVariants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          transition={{ 
-             x: { type: "spring", stiffness: 280, damping: 30, mass: 0.8 },
-             opacity: { duration: 0.3 }
-          }}
-          className="h-full w-full flex-1"
-        >
-          {effectiveView === 'week' ? (
-            <CalendarWeekView
-              currentDate={currentDate}
-              eventsByDate={eventsByDateForWeek}
-              customDragState={customDragState}
-              onEventClick={handleEventClick} 
-              onEventMouseDown={handleEventMouseDown} 
-            />
-          ) : (
-            <CalendarDayView
-              currentDate={currentDate}
-              dayEvents={filteredEvents}
-              customDragState={customDragState}
-              dayOffset={dayOffsetRef.current}
-              debugInfo={debugRef.current}
-              onEventClick={handleEventClick} 
-              onEventMouseDown={handleEventMouseDown} 
-            />
-          )}
-        </motion.div>
-      </AnimatePresence>
+      {/* Temporarily removed AnimatePresence and motion.div for layout debugging */}
+      <div className="h-full w-full flex-1 flex flex-col"> {/* Added flex properties */} 
+        {effectiveView === 'week' && (
+          <CalendarWeekView
+            currentDate={currentDate}
+            eventsByDate={eventsByDateForWeek}
+            customDragState={customDragState}
+            onEventClick={handleEventClick} 
+            onEventMouseDown={handleEventMouseDown} 
+          />
+        )}
+        {effectiveView === 'day' && (
+          <CalendarDayView
+            currentDate={currentDate}
+            dayEvents={filteredEvents}
+            customDragState={customDragState}
+            dayOffset={dayOffsetRef.current}
+            debugInfo={debugRef.current}
+            onEventClick={handleEventClick} 
+            onEventMouseDown={handleEventMouseDown} 
+          />
+        )}
+      </div>
 
       {/* Event Detail Modal Component */}
       <EventDetailModal 
