@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from "framer-motion";
 import { cn } from "@/app/lib/utils";
-import { Clock, CalendarDays } from "lucide-react";
+import { Clock, CalendarDays, GripVertical } from "lucide-react";
 import type { KanbanEvent, EventCardProps as OriginalEventCardProps } from "@/app/types/calendar";
 
 // Simple hash function for color generation
@@ -60,6 +60,17 @@ const EventCard: React.FC<EventCardProps> = ({
     }
   };
 
+  // Handler for the drag handle
+  const handleDragHandleTouchStart = (e: React.TouchEvent) => {
+    e.stopPropagation();
+    if (onTouchStart) onTouchStart(e);
+  };
+
+  const handleDragHandleMouseDown = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onMouseDown) onMouseDown(e);
+  };
+
   // Determine if the main card div should be clickable
   // It should be clickable ONLY if the button is NOT shown (Week View)
   const isCardClickable = !showViewDetailsButton;
@@ -85,7 +96,7 @@ const EventCard: React.FC<EventCardProps> = ({
         onTouchEnd={onTouchEnd}
         whileHover={{ y: -1 }}
         style={{
-          touchAction: isDraggable ? 'none' : 'auto', // Always use 'none' for draggable cards
+          touchAction: 'auto', // Allow scrolling on the card in week view
         }}
       >
         {/* Simplified content for week view */}
@@ -115,7 +126,7 @@ const EventCard: React.FC<EventCardProps> = ({
   return (
     <motion.div
       className={cn(
-        "relative z-0 group bg-white rounded-lg overflow-hidden cursor-grab active:cursor-grabbing touch-manipulation mb-2 hover:z-10",
+        "relative z-0 group bg-white rounded-lg overflow-hidden cursor-default touch-manipulation mb-2 hover:z-10",
         "border border-slate-200 shadow-sm hover:shadow-md transition-all duration-150",
         "flex flex-col",
         "event-card",
@@ -124,20 +135,29 @@ const EventCard: React.FC<EventCardProps> = ({
       )}
       data-event-id={event.id}
       // Don't attach onClick to the main div, only the button should open detail panel
-      onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseLeave}
-      onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
       // Remove hover animation to avoid interference with drag
-      whileHover={isDraggable ? undefined : { y: -2 }}
+      whileHover={undefined}
       // Use faster animation transitions to feel more responsive
       transition={{ duration: 0.1 }}
       style={{
-        touchAction: isDraggable ? 'none' : 'auto', // Always use 'none' for draggable cards to ensure long press works
-        willChange: 'transform', // Hardware acceleration hint
+        touchAction: 'auto', // Allow scrolling on the main card
       }}
     >
+      {/* Drag Handle - only shown on day view/mobile */}
+      {isDraggable && (
+        <div 
+          className="absolute top-0 right-0 w-10 h-10 flex items-center justify-center cursor-grab active:cursor-grabbing z-30"
+          onTouchStart={handleDragHandleTouchStart}
+          onMouseDown={handleDragHandleMouseDown}
+          style={{ touchAction: 'none' }} // Disable default touch behavior ONLY on the handle
+        >
+          <GripVertical size={14} className="text-slate-400" />
+        </div>
+      )}
+    
       {/* Image Section - Full width, consistent height */}
       {event.imageUrl && (
         <div className="relative h-24 w-full overflow-hidden"> 

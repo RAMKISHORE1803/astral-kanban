@@ -10,7 +10,6 @@ import type { KanbanEvent, CalendarDayViewProps } from "@/app/types/calendar";
 
 // Constants
 const SCROLL_THRESHOLD = 10; // pixels of vertical movement to detect scroll intent
-const LONG_PRESS_DURATION = 300; // Even faster long press for more responsiveness
 
 const CalendarDayView = ({
   currentDate,
@@ -22,18 +21,11 @@ const CalendarDayView = ({
   onEventMouseDown,
   containerRef
 }: CalendarDayViewProps) => {
-  // State for touch handling
-  const [touchStartPos, setTouchStartPos] = useState<{x: number, y: number} | null>(null);
-  
-  // State for long press detection
-  const [pressedEvent, setPressedEvent] = useState<KanbanEvent | null>(null);
-  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
-  
-  // Reference to content area
-  const contentRef = useRef<HTMLDivElement>(null);
-
   // Ref to store the current date to detect changes
   const prevDateRef = useRef(currentDate);
+
+  // Reference to content area
+  const contentRef = useRef<HTMLDivElement>(null);
 
   // Effect to handle date changes
   useEffect(() => {
@@ -49,124 +41,13 @@ const CalendarDayView = ({
   }, [currentDate, customDragState.isDragging]);
   
   /**
-   * Clear any active press timers
-   */
-  const clearPressTimer = useCallback(() => {
-    if (pressTimerRef.current) {
-      clearTimeout(pressTimerRef.current);
-      pressTimerRef.current = null;
-    }
-  }, []);
-
-  /**
-   * Handle initial touch down
-   * Starts long press timer for drag initiation
-   */
-  const handleTouchStart = useCallback((event: KanbanEvent, e: React.TouchEvent) => {
-    // Prevent any ongoing drags
-    if (customDragState.isDragging) return;
-    
-    e.stopPropagation();
-    // Don't prevent default as it interferes with scrolling
-    
-    // Clear any existing timer
-    clearPressTimer();
-    setPressedEvent(event);
-    
-    // Record starting touch position
-    setTouchStartPos({
-      x: e.touches[0].clientX,
-      y: e.touches[0].clientY
-    });
-    
-    // Start long press timer for drag initiation
-    pressTimerRef.current = setTimeout(() => {
-      // Trigger vibration if available (for tactile feedback)
-      if (window.navigator && window.navigator.vibrate) {
-        window.navigator.vibrate(50); // Short 50ms vibration
-      }
-      
-      // Start the drag operation immediately
-      onEventMouseDown(event, e);
-      
-      // Clean up
-      setPressedEvent(null);
-      setTouchStartPos(null);
-    }, LONG_PRESS_DURATION);
-  }, [clearPressTimer, customDragState.isDragging, onEventMouseDown]);
-
-  /**
-   * Handle touch move
-   * Only cancel long press on significant movement
-   */
-  const handleTouchMove = useCallback((e: React.TouchEvent) => {
-    if (!touchStartPos || customDragState.isDragging) return;
-    
-    // Get touch movement
-    const deltaY = Math.abs(e.touches[0].clientY - touchStartPos.y);
-    const deltaX = Math.abs(e.touches[0].clientX - touchStartPos.x);
-    
-    // Use a very small threshold to avoid accidental cancellations but still allow deliberate scrolling
-    const totalMovement = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
-    
-    // Cancel long press only on significant movement to allow for slight finger movement
-    if (totalMovement > SCROLL_THRESHOLD * 1.5) {
-      clearPressTimer();
-    }
-  }, [touchStartPos, customDragState.isDragging, clearPressTimer]);
-
-  /**
-   * Handle touch end
-   */
-  const handleTouchEnd = useCallback((event: KanbanEvent) => {
-    // No longer trigger click on touch end - detail view should only open through the button
-    // Just clean up the state
-    if (!customDragState.isDragging) {
-      clearPressTimer();
-    }
-    
-    // Always clear state
-    setPressedEvent(null);
-    setTouchStartPos(null);
-  }, [clearPressTimer, customDragState.isDragging]);
-
-  /**
-   * Handle touch cancel
-   */
-  const handleTouchCancel = useCallback(() => {
-    clearPressTimer();
-    setPressedEvent(null);
-    setTouchStartPos(null);
-  }, [clearPressTimer]);
-  
-  /**
-   * Handle mouse down event
-   * Starts long press timer for drag initiation
-   */
-  const handleMouseDown = useCallback((event: KanbanEvent, e: React.MouseEvent) => {
-    if (customDragState.isDragging) return;
-    
-    e.stopPropagation();
-    clearPressTimer();
-    setPressedEvent(event);
-    
-    // Start timer for drag initiation
-    pressTimerRef.current = setTimeout(() => { 
-      onEventMouseDown(event, e);
-      setPressedEvent(null);
-    }, LONG_PRESS_DURATION);
-  }, [clearPressTimer, customDragState.isDragging, onEventMouseDown]);
-
-  /**
    * Handle click event
    * Only used by the "View Details" button, not the whole card
    */
   const handleClick = useCallback((event: KanbanEvent) => {
     if (customDragState.isDragging) return;
-    
-    clearPressTimer(); 
     onEventClick(event);
-  }, [clearPressTimer, onEventClick]);
+  }, [onEventClick, customDragState.isDragging]);
   
   // Check if we're hovering near an edge during drag
   const isEdgeHovering = customDragState.isDragging && customDragState.currentlyHovering !== null;
@@ -213,15 +94,7 @@ const CalendarDayView = ({
   }, [dayEvents]);
 
   return (
-    <div 
-      className="flex flex-col overflow-hidden" 
-      style={{
-        height: '100%',         /* Fill parent container */
-        minHeight: '400px',     /* Minimum height to ensure usability */
-        maxHeight: '100vh'      /* Never exceed viewport height */
-      }} 
-      ref={containerRef}
-    >
+    <div className="flex flex-col h-full overflow-hidden" ref={containerRef}>
       {/* Edge indicators for navigation during drag */}
       <AnimatePresence>
         {customDragState.isDragging && (
@@ -292,7 +165,7 @@ const CalendarDayView = ({
           </>
         )}
       </AnimatePresence>
-      
+
       {/* Day header - fixed at top */}
       <div className="px-4 py-3 border-b border-slate-200 bg-white sticky top-0 z-10">
         <h3 className="text-lg font-medium text-gray-900">
@@ -300,10 +173,10 @@ const CalendarDayView = ({
         </h3>
       </div>
 
-      {/* Scrollable Content - Using the exact same approach as the 100 numbers test */}
+      {/* Scrollable Content - Using the same approach as in CalendarWeekView */}
       <div 
         ref={contentRef}
-        className="overflow-y-auto p-4 relative bg-gray-50"
+        className="overflow-y-auto p-4 relative"
         style={{
           height: "calc(100% - 56px)", /* Calculated height based on parent height minus header */
           maxHeight: "calc(100% - 56px)"
@@ -313,14 +186,13 @@ const CalendarDayView = ({
         <div className="absolute top-0 left-0 right-0 h-3 bg-gradient-to-b from-white/80 to-transparent pointer-events-none z-[1] opacity-0 transition-opacity duration-200 scroll-shadow-top"></div>
         <div className="absolute bottom-0 left-0 right-0 h-3 bg-gradient-to-t from-white/80 to-transparent pointer-events-none z-[1] opacity-0 transition-opacity duration-200 scroll-shadow-bottom"></div>
         
-        {/* Real Event Cards while maintaining the working scroll structure */}
-        <div className="space-y-3">
-          {dayEvents.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-400">
-              No events for this day
-            </div>
-          ) : (
-            dayEvents.map((event) => (
+        {dayEvents.length === 0 ? (
+          <div className="flex items-center justify-center h-full text-gray-400">
+            No events for this day
+          </div>
+        ) : (
+          <div className="space-y-3 relative pb-10">
+            {dayEvents.map((event) => (
               <div
                 key={event.id}
                 className="relative"
@@ -333,16 +205,16 @@ const CalendarDayView = ({
                   isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
                   isDropTarget={false}
                   onClick={handleClick}
-                  onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
-                  onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
-                  onTouchEnd={() => handleTouchEnd(event)}
+                  onMouseDown={(e) => onEventMouseDown(event, e)}
+                  onTouchStart={(e) => onEventMouseDown(event, e)}
+                  onTouchEnd={() => {}}
                 />
               </div>
-            ))
-          )}
-          {/* Significantly increased bottom padding to ensure more than enough space */}
-          <div className="h-36 md:h-28"></div>
-        </div>
+            ))}
+            {/* Significantly increased bottom padding to ensure more than enough space */}
+            <div className="h-36 md:h-28"></div>
+          </div>
+        )}
       </div>
     </div>
   );
