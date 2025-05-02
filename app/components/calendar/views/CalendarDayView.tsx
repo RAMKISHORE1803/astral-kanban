@@ -99,15 +99,17 @@ const CalendarDayView = ({
 
   // Handle touch end - if no scrolling was detected, treat as a click
   const handleTouchEnd = useCallback((event: KanbanEvent) => {
+    // Check if it was a tap that wasn't a scroll or drag start
     if (pressedEvent?.id === event.id && !isScrolling && !customDragState.isDragging) {
-      clearPressTimer();
-      onEventClick(event);
+      // It was a tap, but we don't trigger the modal here anymore.
+      // The click/tap is handled by the EventCard itself (specifically the button).
+      clearPressTimer(); 
     }
-    
+    // Always clear state regardless
     setPressedEvent(null);
     setTouchStartPos(null);
     setIsScrolling(false);
-  }, [clearPressTimer, onEventClick, pressedEvent, isScrolling, customDragState.isDragging]);
+  }, [clearPressTimer, pressedEvent, isScrolling, customDragState.isDragging]);
 
   // Handle touch cancel - clear any pending actions
   const handleTouchCancel = useCallback(() => {
@@ -125,22 +127,24 @@ const CalendarDayView = ({
     clearPressTimer();
     setPressedEvent(event);
     
-    // Start long press timer for drag initiation
-    pressTimerRef.current = setTimeout(() => {
+    // Only set timer if drag is possible (isDraggable is true on card, which we assume)
+    pressTimerRef.current = setTimeout(() => { 
       onEventMouseDown(event, e);
       setPressedEvent(null);
     }, LONG_PRESS_DURATION);
   }, [clearPressTimer, customDragState.isDragging, onEventMouseDown]);
 
   // Mouse click - handle click event
-  const handleClick = useCallback((event: KanbanEvent, e: React.MouseEvent) => {
+  const handleClick = useCallback((event: KanbanEvent) => {
     if (customDragState.isDragging) return;
     
-    e.stopPropagation();
-    clearPressTimer();
+    // This function is now primarily called by the EventCard's onClick prop
+    // (either the card itself in week view, or the button in day view)
+    // We still clear the press timer in case a rapid mouse down/up occurred
+    // before the long-press timer fired.
+    clearPressTimer(); 
     onEventClick(event);
-    setPressedEvent(null);
-  }, [clearPressTimer, customDragState.isDragging, onEventClick]);
+  }, [clearPressTimer, onEventClick]);
   
   // Simple function to check if we're hovering near an edge
   const isEdgeHovering = customDragState.isDragging && customDragState.currentlyHovering !== null;
@@ -268,11 +272,12 @@ const CalendarDayView = ({
                 data-event-id={event.id}
               >
                 <EventCard
+                  showViewDetailsButton={true}
                   event={event}
                   isSource={customDragState.event?.id === event.id}
                   isDraggable={!customDragState.isDragging || customDragState.event?.id === event.id}
                   isDropTarget={false}
-                  onClick={(e) => handleClick(event, e as unknown as React.MouseEvent)}
+                  onClick={() => handleClick(event)}
                   onMouseDown={(e) => handleMouseDown(event, e as React.MouseEvent)}
                   onTouchStart={(e) => handleTouchStart(event, e as React.TouchEvent)}
                   onTouchEnd={() => handleTouchEnd(event)}

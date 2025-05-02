@@ -4,7 +4,7 @@ import React from 'react';
 import { motion } from "framer-motion";
 import { cn } from "@/app/lib/utils";
 import { Clock, CalendarDays } from "lucide-react";
-import type { KanbanEvent, EventCardProps } from "@/app/types/calendar";
+import type { KanbanEvent, EventCardProps as OriginalEventCardProps } from "@/app/types/calendar";
 
 // Simple hash function for color generation
 function simpleHash(str: string): number {
@@ -29,11 +29,17 @@ const eventColors = [
   { bg: "bg-fuchsia-100", text: "text-fuchsia-700", border: "border-fuchsia-300" },
 ];
 
+// Extend the original props type
+interface EventCardProps extends OriginalEventCardProps {
+  showViewDetailsButton?: boolean;
+}
+
 const EventCard: React.FC<EventCardProps> = ({
   event,
   isSource = false,
   isDraggable = true,
   isDropTarget = false,
+  showViewDetailsButton = false, // Default to false
   onClick,
   onMouseDown,
   onMouseUp,
@@ -43,6 +49,18 @@ const EventCard: React.FC<EventCardProps> = ({
 }) => {
   const colorIndex = simpleHash(event.id) % eventColors.length;
   const colorSet = eventColors[colorIndex];
+
+  // Handler specifically for the "View Details" button
+  const handleButtonClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation(); // Prevent card's onClick if it were to trigger
+    if (onClick) {
+      onClick(event);
+    }
+  };
+
+  // Determine if the main card div should be clickable
+  // It should be clickable ONLY if the button is NOT shown (Week View)
+  const isCardClickable = !showViewDetailsButton;
 
   return (
     <motion.div
@@ -54,9 +72,8 @@ const EventCard: React.FC<EventCardProps> = ({
         isSource && !isDropTarget && "opacity-40"
       )}
       data-event-id={event.id}
-      onClick={(e) => {
-          onClick(event);
-      }}
+      // Attach onClick to the main div ONLY if the button isn't shown
+      onClick={isCardClickable && onClick ? () => onClick(event) : undefined}
       onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
       onMouseLeave={onMouseLeave}
@@ -109,6 +126,24 @@ const EventCard: React.FC<EventCardProps> = ({
             <p className="mt-2 text-xs text-slate-600 line-clamp-2 leading-relaxed">
               {event.description}
             </p>
+
+            {/* Conditionally rendered View Details Button */}
+            {showViewDetailsButton && (
+              <div className="mt-3 pt-2 border-t border-slate-200/60">
+                <button 
+                  onClick={handleButtonClick}
+                  className={cn(
+                    "w-full text-center text-xs font-medium py-1.5 rounded",
+                    colorSet.text, 
+                    "bg-white/70 hover:bg-white transition-colors duration-150",
+                    "focus:outline-none focus:ring-2 focus:ring-offset-1",
+                    colorSet.border.replace('border-', 'focus:ring-') // Reuse border color for focus ring
+                  )}
+                >
+                  View Details
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
