@@ -181,7 +181,11 @@ function snapToPosition(targetX: number, targetY: number, onComplete: () => void
   requestAnimationFrame(animate);
 }
 
-const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContainerProps) => {
+interface CalendarContainerWithDirectionProps extends CalendarContainerProps {
+  animationDirection?: 'left' | 'right';
+}
+
+const CalendarContainer = ({ currentDate, view, onDateChange, animationDirection = 'right' }: CalendarContainerProps) => {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [allEvents, setAllEvents] = useState<KanbanEvent[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -214,7 +218,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     dropRequested: false,
     pendingUpdate: false
   });
-  const prevDateAnimRef = useRef<{ date: Date | null, direction: 'left' | 'right' | null }>({ date: null, direction: null });
+  const prevDateAnimRef = useRef<{ date: Date | null, direction: 'left' | 'right' | null }>({ date: null, direction: 'right' });
 
   const edgeHoldTimerRef = useRef<NodeJS.Timeout | null>(null);
   const edgeHoverDirectionRef = useRef<'left' | 'right' | null>(null);
@@ -232,6 +236,14 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
 
   useEffect(() => {
     globalDragTracking.inDesktopWeekView = !isMobile && view === "week";
+  }, [isMobile, view]);
+
+  const getNavigationOffset = useCallback((direction: 'left' | 'right') => {
+    if (isMobile || view === "day") {
+      return direction === 'left' ? -1 : 1;
+    } else {
+      return direction === 'left' ? -7 : 7;
+    }
   }, [isMobile, view]);
 
   const filteredEvents = useMemo(() => {
@@ -375,9 +387,18 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   }, [customDragState, currentDate, allEvents]);
   
   const triggerDateChange = useCallback((direction: 'left' | 'right') => {
-    if (isTransitioningRef.current || globalDragTracking.inTransition) return;
+    if (isTransitioningRef.current || globalDragTracking.inTransition) {
+      console.log(`[CalendarContainer] Ignoring triggerDateChange (${direction}): already in transition`);
+      return;
+    }
+    
     const now = Date.now();
-    if (now - lastTransitionTimeRef.current < TRANSITION_COOLDOWN) return;
+    if (now - lastTransitionTimeRef.current < TRANSITION_COOLDOWN) {
+      console.log(`[CalendarContainer] Ignoring triggerDateChange (${direction}): cooldown period`);
+      return;
+    }
+    
+    console.log(`[CalendarContainer] Executing triggerDateChange: ${direction}, view: ${view}`);
     
     isTransitioningRef.current = true;
     globalDragTracking.inTransition = true;
@@ -400,7 +421,9 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       }
     }
     
-    const newDate = direction === 'left' ? subDays(currentDate, 1) : addDays(currentDate, 1);
+    const dayOffset = getNavigationOffset(direction);
+    
+    const newDate = addDays(currentDate, dayOffset);
     const newDateStr = format(newDate, "yyyy-MM-dd");
     
     reactSyncRef.current.targetDateAfterTransition = newDateStr;
@@ -416,8 +439,11 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       setCustomDragState(prev => ({ ...prev, event: updatedEvent, currentlyHovering: null, dropTargetId: null }));
     }
     
-    prevDateAnimRef.current = { date: currentDate, direction }; 
-    onDateChange(newDate);
+    prevDateAnimRef.current = {
+      date: currentDate,
+      direction: animationDirection
+    };
+    onDateChange(newDate, direction);
     
     setTimeout(() => {
       if (globalDragTracking.activeOverlay) {
@@ -441,6 +467,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       }
       
       setTimeout(() => {
+        console.log('[CalendarContainer] Re-enabling edge detection after transition');
         globalDragTracking.edgeDetectionEnabled = true;
         edgeHoverDirectionRef.current = null;
         if (edgeHoldTimerRef.current) {
@@ -450,7 +477,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
       }, TRANSITION_COOLDOWN);
       
     }, 350);
-  }, [customDragState, currentDate, onDateChange, finalizeCustomDrag]);
+  }, [customDragState, currentDate, onDateChange, finalizeCustomDrag, animationDirection, getNavigationOffset]);
 
   const startCustomDrag = useCallback((event: KanbanEvent, clientX: number, clientY: number, targetElement?: HTMLElement) => {
     if (customDragState.isDragging) {
@@ -807,7 +834,8 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
         }
       }
       
-      if (!isTransitioningRef.current && !globalDragTracking.inTransition && globalDragTracking.edgeDetectionEnabled && effectiveView === 'day') {
+      if (!isTransitioningRef.current && !globalDragTracking.inTransition && 
+          globalDragTracking.edgeDetectionEnabled && effectiveView === 'day') {
         const container = document.querySelector('.calendar-container');
         const containerRect = container ? container.getBoundingClientRect() : containerRef.current?.getBoundingClientRect();
         
@@ -907,7 +935,17 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
   }, [triggerDateChange]);
 
   useEffect(() => {
-    prevDateAnimRef.current = { ...prevDateAnimRef.current, date: currentDate };
+    const existingDate = prevDateAnimRef.current.date;
+    if (existingDate && existingDate !== currentDate) {
+      if (!prevDateAnimRef.current.direction) {
+        prevDateAnimRef.current.direction = 'right';
+      }
+    }
+    
+    prevDateAnimRef.current = {
+      ...prevDateAnimRef.current,
+      date: currentDate
+    };
   }, [currentDate]);
   
   useEffect(() => {
@@ -1012,6 +1050,63 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
     };
   }, [customDragState.isDragging]);
 
+  // Listen for edge hover events from week view
+  useEffect(() => {
+    const handleWeekViewEdgeHover = (e: CustomEvent) => {
+      if (!e.detail || !e.detail.edge) return;
+
+      const edge = e.detail.edge as 'left' | 'right' | null;
+      
+      console.log(`[CalendarContainer] Received edge hover: ${edge}`);
+      
+      // Only update if the edge changed to avoid unnecessary updates
+      if (edge !== customDragState.currentlyHovering) {
+        setCustomDragState(prev => ({
+          ...prev,
+          currentlyHovering: edge
+        }));
+      }
+    };
+
+    document.addEventListener('weekViewEdgeHover', handleWeekViewEdgeHover as EventListener);
+    
+    return () => {
+      document.removeEventListener('weekViewEdgeHover', handleWeekViewEdgeHover as EventListener);
+    };
+  }, [customDragState.currentlyHovering]);
+
+  // Update the component to handle external direction changes
+  useEffect(() => {
+    // Store the animationDirection in the ref for any code that still relies on it
+    prevDateAnimRef.current = {
+      date: currentDate,
+      direction: animationDirection
+    };
+  }, [currentDate, animationDirection]);
+
+  // Effect to trigger date change when hovering at edges
+  useEffect(() => {
+    if (!customDragState.isDragging || !customDragState.currentlyHovering) return;
+    
+    // Don't start timer if already in transition
+    if (isTransitioningRef.current || globalDragTracking.inTransition) return;
+    
+    // Create a timer to trigger navigation after holding at the edge
+    const edgeHoverTimer = setTimeout(() => {
+      if (customDragState.currentlyHovering && 
+          !isTransitioningRef.current && 
+          !globalDragTracking.inTransition) {
+        
+        // Trigger the date change in the direction of the edge hover
+        triggerDateChange(customDragState.currentlyHovering);
+      }
+    }, EDGE_HOLD_DURATION);
+    
+    return () => {
+      clearTimeout(edgeHoverTimer);
+    };
+  }, [customDragState.isDragging, customDragState.currentlyHovering, isTransitioningRef.current, globalDragTracking.inTransition, triggerDateChange]);
+
   return (
     <div
       ref={containerRef}
@@ -1032,7 +1127,7 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           style={{ pointerEvents: 'none' }}
           aria-hidden="true"
         >
-          Drop to move event
+          {customDragState.currentlyHovering ? 'Hold to move to another week' : 'Drop to move event'}
         </div>
       )}
       
@@ -1050,17 +1145,17 @@ const CalendarContainer = ({ currentDate, view, onDateChange }: CalendarContaine
           <AnimatePresence 
             initial={false} 
             mode="sync" 
-            custom={prevDateAnimRef.current.direction}
+            custom={animationDirection}
           >
             <motion.div
               key={format(currentDate, 'yyyy-MM-dd')}
-              custom={prevDateAnimRef.current.direction}
+              custom={animationDirection}
               variants={iosSlideVariants}
               initial="enter"
               animate="center"
               exit="exit"
               style={{ 
-                transformOrigin: prevDateAnimRef.current.direction === 'left' ? 'right center' : 'left center',
+                transformOrigin: animationDirection === 'left' ? 'right center' : 'left center',
               }}
               className="flex-1 w-full h-full bg-white will-change-transform motion-div-container preserve-3d transform-gpu"
             >

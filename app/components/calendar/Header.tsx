@@ -16,22 +16,29 @@ const Header = ({ currentDate, onDateChange, view }: HeaderProps) => {
 
   const navigateToPrevious = () => {
     if (isMobile || view === "day") {
-      onDateChange(subDays(currentDate, 1));
+      // Navigate one day back
+      onDateChange(subDays(currentDate, 1), 'left');
     } else {
-      onDateChange(subDays(currentDate, 7));
+      // Navigate one week back
+      onDateChange(subDays(currentDate, 7), 'left');
     }
   };
 
   const navigateToNext = () => {
     if (isMobile || view === "day") {
-      onDateChange(addDays(currentDate, 1));
+      // Navigate one day forward 
+      onDateChange(addDays(currentDate, 1), 'right');
     } else {
-      onDateChange(addDays(currentDate, 7));
+      // Navigate one week forward
+      onDateChange(addDays(currentDate, 7), 'right');
     }
   };
 
   const today = () => {
-    onDateChange(new Date());
+    const now = new Date();
+    // Determine direction based on comparison with current date
+    const direction = now < currentDate ? 'left' : now > currentDate ? 'right' : undefined;
+    onDateChange(now, direction);
   };
 
   const getDateRangeText = () => {
@@ -158,7 +165,11 @@ const Header = ({ currentDate, onDateChange, view }: HeaderProps) => {
             return (
               <button
                 key={day.toISOString()}
-                onClick={() => onDateChange(day)}
+                onClick={() => {
+                  // Determine direction based on day comparison
+                  const direction = day < currentDate ? 'left' : day > currentDate ? 'right' : undefined;
+                  onDateChange(day, direction);
+                }}
                 className={cn(
                   "flex-1 text-center py-1.5 rounded-md relative transition-all duration-200 flex flex-col items-center group",
                   !isSelected && "text-slate-500 hover:bg-blue-50/50",

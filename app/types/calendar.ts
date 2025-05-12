@@ -8,7 +8,8 @@ export type { KanbanEvent };
 export interface CalendarContainerProps {
   currentDate: Date;
   view: "week" | "day";
-  onDateChange: (date: Date) => void;
+  onDateChange: (date: Date, direction?: 'left' | 'right') => void;
+  animationDirection?: 'left' | 'right';
 }
 
 // CalendarDayView
@@ -77,7 +78,7 @@ export interface EventDetailModalProps {
 // Header
 export interface HeaderProps {
   currentDate: Date;
-  onDateChange: (date: Date) => void;
+  onDateChange: (date: Date, direction?: 'left' | 'right') => void;
   view: "week" | "day";
 }
 

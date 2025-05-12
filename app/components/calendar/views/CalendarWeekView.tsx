@@ -4,6 +4,8 @@ import { format, isSameDay, startOfWeek, endOfWeek, eachDayOfInterval } from "da
 import { cn } from "@/app/lib/utils";
 import { useState, useEffect } from "react";
 import EventCard from "../EventCard";
+import { motion, AnimatePresence } from "framer-motion";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import type { CalendarWeekViewProps, ColumnProps } from "@/app/types/calendar";
 
 const Column = ({
@@ -117,15 +119,46 @@ const CalendarWeekView = ({
   const weekDays = eachDayOfInterval({ start: weekStart, end: endOfWeek(weekStart, { weekStartsOn: 1 }) });
   
   const [dropTargetDate, setDropTargetDate] = useState<string | null>(null);
+  const [edgeHover, setEdgeHover] = useState<'left' | 'right' | null>(null);
 
+  // Effect for handling drop targets when dragging
   useEffect(() => {
     if (!customDragState.isDragging || !customDragState.position) {
       setDropTargetDate(null);
+      setEdgeHover(null);
       return;
     }
 
     const { x, y } = customDragState.position;
     
+    // Handle edge detection for week navigation
+    const container = document.querySelector('.calendar-week-view');
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      // Use 7% of container width for more reliable edge detection
+      const edgeWidth = Math.max(rect.width * 0.07, 30); 
+      
+      if (x < rect.left + edgeWidth) {
+        if (edgeHover !== 'left') {
+          console.log('[WeekView] Detected LEFT edge hover');
+          setEdgeHover('left');
+        }
+        return;
+      } else if (x > rect.right - edgeWidth) {
+        if (edgeHover !== 'right') {
+          console.log('[WeekView] Detected RIGHT edge hover');
+          setEdgeHover('right');
+        }
+        return;
+      } else {
+        if (edgeHover !== null) {
+          console.log('[WeekView] Edge hover ended');
+          setEdgeHover(null);
+        }
+      }
+    }
+    
+    // Normal column detection
     const elementsAtPoint = document.elementsFromPoint(x, y);
     const columnElement = elementsAtPoint.find(el => el.hasAttribute('data-date') || el.closest('[data-date]'));
     
@@ -141,6 +174,24 @@ const CalendarWeekView = ({
     }
   }, [customDragState.isDragging, customDragState.position]);
 
+  // Convert edge hover to the format expected by the parent component
+  useEffect(() => {
+    if (customDragState.isDragging) {
+      const newHoverState = edgeHover;
+      if (newHoverState !== customDragState.currentlyHovering) {
+        console.log(`[WeekView] Dispatching edge hover event: ${newHoverState}`);
+        
+        // Dispatch the event to notify the CalendarContainer
+        document.dispatchEvent(
+          new CustomEvent('weekViewEdgeHover', { 
+            detail: { edge: newHoverState } 
+          })
+        );
+      }
+    }
+  }, [edgeHover, customDragState.isDragging, customDragState.currentlyHovering]);
+
+  // Existing effect for scroll shadows
   useEffect(() => {
     const scrollContainers = document.querySelectorAll('.calendar-week-view .overflow-y-auto');
     
@@ -180,7 +231,78 @@ const CalendarWeekView = ({
 
   // Use directly rendered events from props without the DND Kit
   return (
-    <div className="grid grid-cols-7 h-[85vh] border-t border-l border-slate-200 calendar-week-view">
+    <div className="grid grid-cols-7 h-[85vh] border-t border-l border-slate-200 calendar-week-view relative">
+      {/* Edge indicators for week navigation */}
+      <AnimatePresence>
+        {customDragState.isDragging && (
+          <>
+            {/* Left edge indicator - Previous Week */}
+            <motion.div 
+              className={cn(
+                "absolute left-0 top-0 bottom-0 z-30 pointer-events-none flex items-center",
+                "bg-gradient-to-r from-blue-500/20 to-transparent"
+              )}
+              initial={{ width: "0%", opacity: 0 }}
+              animate={{ 
+                width: edgeHover === 'left' ? "8%" : "4%",
+                opacity: edgeHover === 'left' ? 1 : 0.6
+              }}
+              exit={{ width: "0%", opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <motion.div 
+                className={cn(
+                  "absolute left-3 p-3 rounded-full bg-blue-500 shadow-lg",
+                  edgeHover === 'left' ? "opacity-100" : "opacity-70"
+                )}
+                animate={{
+                  scale: edgeHover === 'left' ? [1, 1.1, 1] : 1,
+                  x: edgeHover === 'left' ? [-5, 0, -5] : 0
+                }}
+                transition={{ 
+                  repeat: edgeHover === 'left' ? Infinity : 0,
+                  duration: 1.5
+                }}
+              >
+                <ChevronLeft className="text-white" size={20} />
+              </motion.div>
+            </motion.div>
+            
+            {/* Right edge indicator - Next Week */}
+            <motion.div 
+              className={cn(
+                "absolute right-0 top-0 bottom-0 z-30 pointer-events-none flex items-center justify-end",
+                "bg-gradient-to-l from-blue-500/20 to-transparent"
+              )}
+              initial={{ width: "0%", opacity: 0 }}
+              animate={{ 
+                width: edgeHover === 'right' ? "8%" : "4%", 
+                opacity: edgeHover === 'right' ? 1 : 0.6
+              }}
+              exit={{ width: "0%", opacity: 0 }}
+              transition={{ duration: 0.2 }}
+            >
+              <motion.div 
+                className={cn(
+                  "absolute right-3 p-3 rounded-full bg-blue-500 shadow-lg",
+                  edgeHover === 'right' ? "opacity-100" : "opacity-70"
+                )}
+                animate={{
+                  scale: edgeHover === 'right' ? [1, 1.1, 1] : 1,
+                  x: edgeHover === 'right' ? [5, 0, 5] : 0
+                }}
+                transition={{ 
+                  repeat: edgeHover === 'right' ? Infinity : 0, 
+                  duration: 1.5
+                }}
+              >
+                <ChevronRight className="text-white" size={20} />
+              </motion.div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
       {weekDays.map((day, index) => {
         const dateStr = format(day, "yyyy-MM-dd");
         const dayEvents = eventsByDate[dateStr] || [];

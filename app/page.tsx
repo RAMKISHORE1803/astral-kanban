@@ -10,6 +10,7 @@ export default function Home() {
   const isMobile = useMediaQuery("(max-width: 768px)");
   const [currentDate, setCurrentDate] = useState<Date>(new Date());
   const [view, setView] = useState<"week" | "day">("week");
+  const [animationDirection, setAnimationDirection] = useState<'left' | 'right'>('right');
 
   // Set view based on device 
   useEffect(() => {
@@ -21,8 +22,15 @@ export default function Home() {
   }, [isMobile]);
 
   // Function to handle date changes from header or container (swipe/drag)
-  const handleDateChange = (newDate: Date) => {
-    console.log(`[Home] handleDateChange received: ${format(newDate, 'yyyy-MM-dd')}`);
+  const handleDateChange = (newDate: Date, direction?: 'left' | 'right') => {
+    console.log(`[Home] handleDateChange received: ${format(newDate, 'yyyy-MM-dd')}${direction ? `, direction: ${direction}` : ''}`);
+    
+    // Update animation direction if provided
+    if (direction) {
+      setAnimationDirection(direction);
+    }
+    
+    // Set the current date
     setCurrentDate(newDate);
   };
 
@@ -39,6 +47,7 @@ export default function Home() {
           currentDate={currentDate}
           view={view}
           onDateChange={handleDateChange}
+          animationDirection={animationDirection}
         />
       </div>
     </main>
